@@ -800,3 +800,14 @@ v3 도전:
 * 부하 테스트 기반 병목 분석
 * 모니터링 지표 추가
 
+---
+
+## Development Process
+
+본 프로젝트는 Issue 기반 Human-in-the-loop AI-assisted 개발 프로세스를 적용한다.
+
+- [Project Context](docs/PROJECT_CONTEXT.md)
+- [AI Workflow](docs/AI_WORKFLOW.md)
+- [Codex Rules](docs/CODEX_RULES.md)
+- [AI Review Log](docs/AI_REVIEW_LOG.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
