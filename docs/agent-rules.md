@@ -135,8 +135,8 @@ v3는 제출 필수 범위가 아니라 도전 과제이다. MySQL Replication, 
 
 작성 대상:
 
-- `docs/api-spec.md`
-- `docs/erd.md`
+- `docs/03_API_SPEC.md`
+- `docs/04_ERD.md`
 - `docs/agent-rules.md`
 
 금지 대상:
