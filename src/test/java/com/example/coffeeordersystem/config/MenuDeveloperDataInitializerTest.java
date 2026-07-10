@@ -17,6 +17,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * 개발용 메뉴 초기화가 기본 ACTIVE 메뉴를 한 번만 저장하는지 검증한다.
+ */
 @ExtendWith(MockitoExtension.class)
 class MenuDeveloperDataInitializerTest {
 

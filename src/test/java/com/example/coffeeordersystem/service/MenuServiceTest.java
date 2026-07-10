@@ -17,6 +17,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * 메뉴 조회 Service가 ACTIVE 메뉴 조회와 DTO 변환 규칙을 지키는지 검증한다.
+ */
 @ExtendWith(MockitoExtension.class)
 class MenuServiceTest {
 

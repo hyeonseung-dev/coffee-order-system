@@ -15,6 +15,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+/**
+ * 메뉴 목록 Controller의 HTTP 응답 구조를 검증하는 Web MVC 테스트다.
+ *
+ * Service는 mock으로 대체해 Controller가 data wrapper와 필요한 필드만 반환하는지 확인한다.
+ */
 @WebMvcTest(MenuController.class)
 class MenuControllerTest {
 
