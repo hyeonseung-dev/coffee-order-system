@@ -1,0 +1,132 @@
+{
+  "info": {
+    "_postman_id": "3d55df20-6fb2-4f3b-b5b0-issue6-menu-list",
+    "name": "Coffee Order System - Menu List",
+    "description": "Coffee Order System Issue #6 Postman collection. Includes only the implemented GET /api/menus API.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "GET /api/menus",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/menus",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "menus"
+          ]
+        },
+        "description": "주문 가능한 ACTIVE 메뉴 목록을 조회한다. Issue #6에서 구현된 API다."
+      },
+      "response": [
+        {
+          "name": "200 OK - empty",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/menus",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "menus"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"data\": []\n}"
+        },
+        {
+          "name": "200 OK - with default menus",
+          "originalRequest": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/menus",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "menus"
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"data\": [\n    {\n      \"menuId\": 1,\n      \"name\": \"아이스아메리카노\",\n      \"price\": 3000\n    },\n    {\n      \"menuId\": 2,\n      \"name\": \"카페모카\",\n      \"price\": 4500\n    },\n    {\n      \"menuId\": 3,\n      \"name\": \"아이스초코\",\n      \"price\": 4500\n    },\n    {\n      \"menuId\": 4,\n      \"name\": \"자몽허니블랙티\",\n      \"price\": 4800\n    },\n    {\n      \"menuId\": 5,\n      \"name\": \"허니브레드\",\n      \"price\": 6000\n    }\n  ]\n}"
+        }
+      ],
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('response has data array', function () {",
+              "  const json = pm.response.json();",
+              "  pm.expect(json).to.have.property('data');",
+              "  pm.expect(json.data).to.be.an('array');",
+              "});",
+              "",
+              "pm.test('menu response exposes only menuId, name, price when present', function () {",
+              "  const json = pm.response.json();",
+              "  if (json.data.length > 0) {",
+              "    pm.expect(Object.keys(json.data[0]).sort()).to.eql(['menuId', 'name', 'price'].sort());",
+              "  }",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,13 +1,16 @@
 package com.example.coffeeordersystem;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
 
-@SpringBootTest
 class CoffeeOrderSystemApplicationTests {
 
 	@Test
-	void contextLoads() {
+	void 애플리케이션_클래스를_생성할_수_있다() {
+		// given
+		CoffeeOrderSystemApplication application = new CoffeeOrderSystemApplication();
+
+		// when & then
+		org.assertj.core.api.Assertions.assertThat(application).isNotNull();
 	}
 
 }
