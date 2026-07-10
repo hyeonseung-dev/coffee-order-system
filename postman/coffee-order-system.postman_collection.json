@@ -1,8 +1,8 @@
 {
   "info": {
-    "_postman_id": "3d55df20-6fb2-4f3b-b5b0-issue6-v0apis",
-    "name": "Coffee Order System",
-    "description": "Coffee Order System v0 API collection. GET /api/menus is implemented in Issue #6. Other v0 APIs are included in advance from docs/03_API_SPEC.md for Postman testing preparation.",
+    "_postman_id": "3d55df20-6fb2-4f3b-b5b0-issue6-menu-list",
+    "name": "Coffee Order System - Menu List",
+    "description": "Coffee Order System Issue #6 Postman collection. Includes only the implemented GET /api/menus API.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -10,25 +10,35 @@
       "key": "baseUrl",
       "value": "http://localhost:8080",
       "type": "string"
-    },
-    {
-      "key": "userId",
-      "value": "1",
-      "type": "string"
-    },
-    {
-      "key": "menuId",
-      "value": "1",
-      "type": "string"
     }
   ],
   "item": [
     {
-      "name": "Menus",
-      "item": [
+      "name": "GET /api/menus",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/menus",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "menus"
+          ]
+        },
+        "description": "주문 가능한 ACTIVE 메뉴 목록을 조회한다. Issue #6에서 구현된 API다."
+      },
+      "response": [
         {
-          "name": "Get Menus - implemented",
-          "request": {
+          "name": "200 OK - empty",
+          "originalRequest": {
             "method": "GET",
             "header": [
               {
@@ -45,105 +55,22 @@
                 "api",
                 "menus"
               ]
-            },
-            "description": "주문 가능한 ACTIVE 메뉴 목록을 조회한다. Issue #6에서 구현된 API다."
+            }
           },
-          "response": [
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
             {
-              "name": "200 OK - empty",
-              "originalRequest": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/api/menus",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "menus"
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"data\": []\n}"
-            },
-            {
-              "name": "200 OK - with menus",
-              "originalRequest": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/api/menus",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "menus"
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"data\": [\n    {\n      \"menuId\": 1,\n      \"name\": \"Americano\",\n      \"price\": 3000\n    },\n    {\n      \"menuId\": 2,\n      \"name\": \"Latte\",\n      \"price\": 4000\n    }\n  ]\n}"
+              "key": "Content-Type",
+              "value": "application/json"
             }
           ],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('status is 200', function () {",
-                  "  pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "pm.test('response has data array', function () {",
-                  "  const json = pm.response.json();",
-                  "  pm.expect(json).to.have.property('data');",
-                  "  pm.expect(json.data).to.be.an('array');",
-                  "});",
-                  "",
-                  "pm.test('menu response exposes only menuId, name, price when present', function () {",
-                  "  const json = pm.response.json();",
-                  "  if (json.data.length > 0) {",
-                  "    pm.expect(Object.keys(json.data[0]).sort()).to.eql(['menuId', 'name', 'price'].sort());",
-                  "  }",
-                  "});"
-                ]
-              }
-            }
-          ]
+          "body": "{\n  \"data\": []\n}"
         },
         {
-          "name": "Get Popular Menus - planned",
-          "request": {
+          "name": "200 OK - with default menus",
+          "originalRequest": {
             "method": "GET",
             "header": [
               {
@@ -152,370 +79,54 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/api/menus/popular?days=7&limit=3",
+              "raw": "{{baseUrl}}/api/menus",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "api",
-                "menus",
-                "popular"
-              ],
-              "query": [
-                {
-                  "key": "days",
-                  "value": "7"
-                },
-                {
-                  "key": "limit",
-                  "value": "3"
-                }
+                "menus"
               ]
-            },
-            "description": "최근 7일 인기 메뉴 TOP 3 조회 API. 현재 백엔드 구현 전이며 문서 명세 기준으로 미리 만든 요청이다."
-          },
-          "response": [
-            {
-              "name": "200 OK - planned response",
-              "originalRequest": {
-                "method": "GET",
-                "header": [
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/api/menus/popular?days=7&limit=3",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "menus",
-                    "popular"
-                  ],
-                  "query": [
-                    {
-                      "key": "days",
-                      "value": "7"
-                    },
-                    {
-                      "key": "limit",
-                      "value": "3"
-                    }
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"data\": [\n    {\n      \"menuId\": 1,\n      \"name\": \"Americano\",\n      \"orderCount\": 15\n    },\n    {\n      \"menuId\": 2,\n      \"name\": \"Latte\",\n      \"orderCount\": 10\n    },\n    {\n      \"menuId\": 3,\n      \"name\": \"Mocha\",\n      \"orderCount\": 7\n    }\n  ]\n}"
             }
-          ]
+          },
+          "status": "OK",
+          "code": 200,
+          "_postman_previewlanguage": "json",
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"data\": [\n    {\n      \"menuId\": 1,\n      \"name\": \"아이스아메리카노\",\n      \"price\": 3000\n    },\n    {\n      \"menuId\": 2,\n      \"name\": \"카페모카\",\n      \"price\": 4500\n    },\n    {\n      \"menuId\": 3,\n      \"name\": \"아이스초코\",\n      \"price\": 4500\n    },\n    {\n      \"menuId\": 4,\n      \"name\": \"자몽허니블랙티\",\n      \"price\": 4800\n    },\n    {\n      \"menuId\": 5,\n      \"name\": \"허니브레드\",\n      \"price\": 6000\n    }\n  ]\n}"
         }
-      ]
-    },
-    {
-      "name": "Points",
-      "item": [
+      ],
+      "event": [
         {
-          "name": "Charge Points - planned",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"amount\": 10000\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/users/{{userId}}/points/charge",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "users",
-                "{{userId}}",
-                "points",
-                "charge"
-              ]
-            },
-            "description": "포인트 충전 API. 현재 백엔드 구현 전이며 문서 명세 기준으로 미리 만든 요청이다."
-          },
-          "response": [
-            {
-              "name": "200 OK - planned response",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"amount\": 10000\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/users/{{userId}}/points/charge",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "users",
-                    "{{userId}}",
-                    "points",
-                    "charge"
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"data\": {\n    \"userId\": 1,\n    \"chargedAmount\": 10000,\n    \"balance\": 10000\n  }\n}"
-            },
-            {
-              "name": "400 Bad Request - invalid amount",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"amount\": 0\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/users/{{userId}}/points/charge",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "users",
-                    "{{userId}}",
-                    "points",
-                    "charge"
-                  ]
-                }
-              },
-              "status": "Bad Request",
-              "code": 400,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"code\": \"INVALID_CHARGE_AMOUNT\",\n  \"message\": \"충전 금액은 0보다 커야 합니다.\"\n}"
-            }
-          ]
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status is 200', function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "pm.test('response has data array', function () {",
+              "  const json = pm.response.json();",
+              "  pm.expect(json).to.have.property('data');",
+              "  pm.expect(json.data).to.be.an('array');",
+              "});",
+              "",
+              "pm.test('menu response exposes only menuId, name, price when present', function () {",
+              "  const json = pm.response.json();",
+              "  if (json.data.length > 0) {",
+              "    pm.expect(Object.keys(json.data[0]).sort()).to.eql(['menuId', 'name', 'price'].sort());",
+              "  }",
+              "});"
+            ]
+          }
         }
       ]
-    },
-    {
-      "name": "Orders",
-      "item": [
-        {
-          "name": "Create Order - planned",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Accept",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"userId\": {{userId}},\n  \"menuId\": {{menuId}}\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{baseUrl}}/api/orders",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "api",
-                "orders"
-              ]
-            },
-            "description": "커피 주문/결제 API. 현재 백엔드 구현 전이며 문서 명세 기준으로 미리 만든 요청이다."
-          },
-          "response": [
-            {
-              "name": "200 OK - planned response",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"userId\": 1,\n  \"menuId\": 1\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/orders",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "orders"
-                  ]
-                }
-              },
-              "status": "OK",
-              "code": 200,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"data\": {\n    \"orderId\": 1,\n    \"userId\": 1,\n    \"menuId\": 1,\n    \"orderPrice\": 3000,\n    \"remainingBalance\": 7000,\n    \"orderedAt\": \"2026-07-08T20:00:00\"\n  }\n}"
-            },
-            {
-              "name": "400 Bad Request - insufficient point",
-              "originalRequest": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Accept",
-                    "value": "application/json"
-                  }
-                ],
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"userId\": 1,\n  \"menuId\": 1\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "url": {
-                  "raw": "{{baseUrl}}/api/orders",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "api",
-                    "orders"
-                  ]
-                }
-              },
-              "status": "Bad Request",
-              "code": 400,
-              "_postman_previewlanguage": "json",
-              "header": [
-                {
-                  "key": "Content-Type",
-                  "value": "application/json"
-                }
-              ],
-              "body": "{\n  \"code\": \"INSUFFICIENT_POINT\",\n  \"message\": \"포인트 잔액이 부족합니다.\"\n}"
-            }
-          ]
-        }
-      ]
-    }
-  ],
-  "event": [
-    {
-      "listen": "prerequest",
-      "script": {
-        "type": "text/javascript",
-        "exec": [
-          ""
-        ]
-      }
-    },
-    {
-      "listen": "test",
-      "script": {
-        "type": "text/javascript",
-        "exec": [
-          ""
-        ]
-      }
     }
   ]
 }
