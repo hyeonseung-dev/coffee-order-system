@@ -9,6 +9,11 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
+/**
+ * 로컬 개발 환경에서 메뉴 목록 API를 바로 확인할 수 있도록 기본 메뉴를 등록한다.
+ *
+ * prod 프로필에서는 실행되지 않으며, 기존 메뉴가 하나라도 있으면 중복 등록하지 않는다.
+ */
 @Component
 @Profile("!prod")
 public class MenuDeveloperDataInitializer implements CommandLineRunner {
@@ -21,6 +26,7 @@ public class MenuDeveloperDataInitializer implements CommandLineRunner {
 
 	@Override
 	public void run(String... args) {
+		// 개발용 데이터가 재시작 때마다 누적되지 않도록 메뉴가 비어 있을 때만 저장한다.
 		if (menuRepository.count() > 0) {
 			return;
 		}
