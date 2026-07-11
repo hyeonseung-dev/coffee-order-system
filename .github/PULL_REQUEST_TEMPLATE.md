@@ -6,6 +6,19 @@
 
 - Closes #
 
+## Harness Execution
+
+<!--
+Linked Issue에는 현재 작업의 GitHub Issue 번호를 입력합니다.
+Harness Attempt에는 1 또는 2를 입력합니다.
+PR은 Harness Status가 PASS일 때만 생성합니다.
+FAIL과 BLOCKED 상태에서는 PR을 생성하지 않습니다.
+-->
+
+- Linked Issue: #
+- Harness Attempt:
+- Harness Status: PASS
+
 ## 변경 사항
 
 -

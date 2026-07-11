@@ -1,0 +1,174 @@
+name: Harness Check
+
+on:
+  pull_request:
+    branches:
+      - develop
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - edited
+      - ready_for_review
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: harness-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  harness-check:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Parse harness fields from PR body
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          issue_count=$(printf '%s\n' "$PR_BODY" | awk '/^[[:space:]]*[-*]?[[:space:]]*Linked Issue[[:space:]]*:/ { count++ } END { print count + 0 }')
+          attempt_count=$(printf '%s\n' "$PR_BODY" | awk '/^[[:space:]]*[-*]?[[:space:]]*Harness Attempt[[:space:]]*:/ { count++ } END { print count + 0 }')
+          status_count=$(printf '%s\n' "$PR_BODY" | awk '/^[[:space:]]*[-*]?[[:space:]]*Harness Status[[:space:]]*:/ { count++ } END { print count + 0 }')
+
+          if [ "$issue_count" -ne 1 ]; then
+            printf 'HARNESS CHECK FAILED: exactly one Linked Issue: #<number> is required\n' >&2
+            exit 1
+          fi
+          if [ "$attempt_count" -ne 1 ]; then
+            printf 'HARNESS CHECK FAILED: exactly one Harness Attempt: 1|2 is required\n' >&2
+            exit 1
+          fi
+          if [ "$status_count" -ne 1 ]; then
+            printf 'HARNESS CHECK FAILED: exactly one Harness Status is required\n' >&2
+            exit 1
+          fi
+
+          issue_number=$(printf '%s\n' "$PR_BODY" | sed -nE 's/^[[:space:]]*[-*]?[[:space:]]*Linked Issue[[:space:]]*:[[:space:]]*#([1-9][0-9]*)[[:space:]]*$/\1/p')
+          attempt=$(printf '%s\n' "$PR_BODY" | sed -nE 's/^[[:space:]]*[-*]?[[:space:]]*Harness Attempt[[:space:]]*:[[:space:]]*([12])[[:space:]]*$/\1/p')
+          status=$(printf '%s\n' "$PR_BODY" | sed -nE 's/^[[:space:]]*[-*]?[[:space:]]*Harness Status[[:space:]]*:[[:space:]]*([A-Za-z]+)[[:space:]]*$/\1/p')
+
+          if [ -z "$issue_number" ]; then
+            printf 'HARNESS CHECK FAILED: Linked Issue must contain a positive issue number\n' >&2
+            exit 1
+          fi
+          if [ -z "$attempt" ]; then
+            printf 'HARNESS CHECK FAILED: Harness Attempt must be 1 or 2\n' >&2
+            exit 1
+          fi
+          if [ -z "$status" ]; then
+            printf 'HARNESS CHECK FAILED: Harness Status is invalid\n' >&2
+            exit 1
+          fi
+
+          if [ "$status" != 'PASS' ]; then
+            printf 'HARNESS CHECK FAILED: Pull Request requires final PASS status\n' >&2
+            exit 1
+          fi
+
+          printf 'HARNESS_ISSUE=%s\n' "$issue_number" >> "$GITHUB_ENV"
+          printf 'HARNESS_ATTEMPT=%s\n' "$attempt" >> "$GITHUB_ENV"
+          printf 'HARNESS_STATUS=%s\n' "$status" >> "$GITHUB_ENV"
+
+          printf 'Issue: #%s\n' "$issue_number"
+          printf 'Attempt: %s/2\n' "$attempt"
+          printf 'Status: %s\n' "$status"
+
+      - name: Check required harness files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_files='AGENTS.md
+          .codex/skills/coffee-order-issue-loop/SKILL.md
+          .codex/agents/planner.md
+          .codex/agents/implementer.md
+          .codex/agents/reviewer.md
+          .codex/hooks/require-log.sh
+          .codex/hooks/report-github-status.sh
+          .githooks/pre-push
+          logs/README.md
+          logs/attempt-log-template.md
+          logs/verification-log.md'
+
+          missing=0
+          while IFS= read -r file; do
+            file=$(printf '%s' "$file" | sed 's/^[[:space:]]*//')
+            if [ ! -f "$file" ]; then
+              printf 'HARNESS CHECK FAILED: missing file: %s\n' "$file" >&2
+              missing=1
+            fi
+          done <<EOF
+          $required_files
+          logs/issues/issue-${HARNESS_ISSUE}/attempt-log.md
+          EOF
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Check Bash syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n .codex/hooks/require-log.sh
+          bash -n .codex/hooks/report-github-status.sh
+          bash -n .githooks/pre-push
+
+      - name: Check executable permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in \
+            .codex/hooks/require-log.sh \
+            .codex/hooks/report-github-status.sh \
+            .githooks/pre-push \
+            gradlew
+          do
+            if [ ! -x "$file" ]; then
+              printf 'HARNESS CHECK FAILED: executable permission required: %s\n' "$file" >&2
+              exit 1
+            fi
+          done
+
+      - name: Enforce harness log and PASS evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash .codex/hooks/require-log.sh \
+            --issue "$HARNESS_ISSUE" \
+            --attempt "$HARNESS_ATTEMPT" \
+            --status "$HARNESS_STATUS"
+
+      - name: Run Gradle tests
+        run: ./gradlew test
+
+      - name: Run Gradle build without repeating tests
+        run: ./gradlew build -x test
+
+      - name: Report harness CI success
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s\n\n' 'HARNESS CI PASSED'
+          printf 'Issue: #%s\n' "$HARNESS_ISSUE"
+          printf 'Attempt: %s/2\n' "$HARNESS_ATTEMPT"
+          printf 'Status: PASS\n'
+          printf 'Tests: PASSED\n'
+          printf 'Build: PASSED\n'
