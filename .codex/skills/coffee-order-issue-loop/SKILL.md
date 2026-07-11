@@ -92,8 +92,8 @@ Planner·Implementer·Reviewer 서브에이전트, logs 구조, scripts 또는 h
 ### 7. Review
 
 - 목적: Reviewer로 전환해 Issue, 실제 diff, 검증 결과를 기준으로 독립 검토한다.
-- 다음 단계 조건: PASS이면 Record로 이동하고, FAIL이면 Fix로 이동한다.
-- BLOCKED 조건: 필수 근거 부족이나 Human Gate 누락이면 BLOCKED로 종료하며 자동 수정하지 않는다.
+- 다음 단계 조건: PASS, FAIL, BLOCKED 판정과 근거를 확정하고 Record로 이동한다.
+- BLOCKED 조건: 필수 근거 부족이나 Human Gate 누락이면 BLOCKED로 판정하며 자동 수정하지 않는다.
 
 세부 역할 규칙과 출력 형식은 역할 정의 단계에서 별도로 정의한다.
 
@@ -110,24 +110,53 @@ Planner 계획 전체를 다시 작성하지 않는다. 전체 대화나 전체 
 ### 9. Re-verify
 
 - 목적: Attempt 2에서 Verify와 Review를 다시 수행한다.
-- 다음 단계 조건: PASS이면 Record로 이동한다.
-- BLOCKED 조건: 수정 필요 문제가 남으면 추가 Fix 없이 `BLOCKED: RETRY LIMIT`, 이전과 동일한 실패이면 `BLOCKED: REPEATED FAILURE`로 종료하고 즉시 Human Handoff로 이동한다. Reviewer가 BLOCKED를 반환해도 즉시 Human Handoff로 이동한다.
+- 다음 단계 조건: PASS이면 PASS 근거를 확정하고 Record로 이동한다.
+- BLOCKED 조건: 수정 필요 문제가 남으면 추가 Fix 없이 `BLOCKED: RETRY LIMIT`, 이전과 동일한 실패이면 `BLOCKED: REPEATED FAILURE`로 판정하고 Record로 이동한다. Reviewer가 BLOCKED를 반환해도 Record로 이동한다.
 
 ### 10. Record
 
-- 목적: 실행 과정과 결과를 향후 구축될 logs 구조에 기록한다.
-- 다음 단계 조건: Issue 식별자, 실행 단계, 변경 파일, 검증 결과, Review 결과, 재시도 결과, 최종 상태, Human 확인 항목이 정리된다.
+- 목적: Planner, Implementer, Verify, Reviewer 결과를 Attempt Log에 기록하고 검증 결과를 Verification Log에 기록한 뒤 현재 Attempt와 상태를 확정한다.
+- 다음 단계 조건: Issue 식별자, 실행 단계, 변경 파일, 검증 결과, Review 결과, 재시도 결과, 최종 상태, Human 확인 항목이 사실대로 기록되면 Enforce로 이동한다.
 - BLOCKED 조건: 필수 실행 근거가 누락되어 최종 상태를 설명할 수 없으면 BLOCKED로 전환한다.
 
-구체적인 로그 경로와 파일 형식은 logs 구축 단계에서 정한다. 이번 단계에서는 로그 파일이나 logs 디렉터리를 만들지 않는다.
+로그 기록 전에 Enforce를 실행하지 않는다. 검사 실패 후 존재하지 않는 근거를 만들거나 실패 결과를 성공처럼 바꾸지 않는다. 단순 기록 누락이고 실제 근거가 존재할 때만 Record로 돌아가 사실에 맞게 한 번 보완한 뒤 Enforce를 한 번 다시 수행할 수 있다.
 
-### 11. Prepare Pull Request
+### 11. Enforce
+
+- 목적: Record 완료 후 `.codex/hooks/require-log.sh`를 절차적으로 호출해 현재 상태가 로그와 재시도 규칙을 충족하는지 읽기 전용으로 검사한다.
+- 다음 단계 조건: 실제 종료 코드와 핵심 출력을 확인한 뒤 아래 상태 전이를 따른다.
+- BLOCKED 조건: 종료 코드 1이면 모든 자동 진행을 중단하고 Human Handoff로 이동한다.
+
+다음 형식으로 실행한다.
+
+```bash
+bash .codex/hooks/require-log.sh \
+  --issue {issue-number} \
+  --attempt {current-attempt} \
+  --status {PASS|FAIL|BLOCKED}
+```
+
+`issue-number`는 현재 GitHub Issue 번호, `current-attempt`는 실제 시도 번호 1 또는 2, `status`는 Reviewer 또는 실행 흐름이 확정한 실제 상태를 사용한다. Enforce는 로그를 생성하거나 수정하지 않는다.
+
+실행 기록에는 명령, Issue 번호, Attempt 번호, 전달 상태, 실제 종료 코드, 핵심 출력, 검사한 Attempt Log와 Verification Log 경로, 다음 단계 결정을 남긴다. 종료 코드를 추정하지 않는다.
+
+상태별 전이를 적용한다.
+
+- Attempt 1 + PASS: PASS 근거를 Record한 뒤 검사한다. 종료 코드 0이면 Prepare Pull Request, 1이면 Human Handoff로 이동한다.
+- Attempt 1 + FAIL: 실패 원인, 수정 대상, 다음 시도 지침, 수정 금지 범위, 재검증 명령, 자동 재시도 허용 여부를 Record한다. 종료 코드 0일 때만 Fix로 이동해 Implementer를 Attempt 2로 한 번 호출한다. 검사 통과는 수정 패킷의 기록 완료를 의미하며 구현 완료를 의미하지 않는다.
+- Attempt 2 + PASS: 재검증 결과와 최종 PASS 근거를 Record한다. 종료 코드 0이면 Prepare Pull Request, 1이면 Human Handoff로 이동한다.
+- BLOCKED: BLOCKED 상태, Attempt 횟수, 마지막 실패 원인, 마지막 테스트 또는 빌드 결과, 수정된 파일, 미검증 항목, Human 결정 사항을 Record한 뒤 검사한다. 종료 코드와 관계없이 Fix나 Prepare Pull Request로 이동하지 않고 Human Handoff로 이동한다. 종료 코드 0은 중단 정보가 정상 기록됐다는 의미일 뿐 작업 성공을 뜻하지 않는다.
+- Attempt 2 + FAIL: 방어적으로 스크립트를 실행해 `BLOCKED: RETRY LIMIT` 결과를 기록하고 즉시 Human Handoff로 이동한다. Attempt 3을 만들거나 Implementer를 다시 호출하지 않는다.
+
+Enforce가 실패하면 오류 또는 BLOCKED 코드, 누락·위반 항목, 두 로그 경로, Human 확인 항목을 기록한다. 검사 실패를 무시하거나, 실제 상태·Attempt와 다른 값을 전달하거나, 검사를 생략하거나, 직접 PR 준비 또는 추가 Fix로 우회하지 않는다.
+
+### 12. Prepare Pull Request
 
 - 목적: PASS일 때 Issue 연결 정보, PR 제목, PR 본문 초안을 준비한다.
-- 다음 단계 조건: 초안이 Issue 범위와 검증 결과를 정확히 반영한다.
-- BLOCKED 조건: PASS가 아니거나 Issue 연결과 검증 근거가 불충분하면 PR 준비를 완료하지 않는다.
+- 다음 단계 조건: Reviewer가 PASS이고, Attempt가 1 또는 2이며, Record와 두 로그가 완료되고, Enforce를 PASS 상태로 실행한 실제 종료 코드가 0이고, 핵심 미검증 항목이 없으며, 필요한 Human Gate가 충족됐을 때만 진입한다.
+- BLOCKED 조건: FAIL·BLOCKED 상태, Enforce 실패, Issue 연결이나 검증 근거 부족 중 하나라도 해당하면 PR 준비를 수행하지 않는다.
 
-### 12. Human Handoff
+### 13. Human Handoff
 
 - 목적: 최종 상태, 검증·Review 결과, 미검증 항목, Human 확인 항목, PR 초안을 전달한다.
 - 다음 단계 조건: Human이 후속 GitHub 작업 또는 종료 여부를 판단한다.
@@ -135,9 +164,18 @@ Planner 계획 전체를 다시 작성하지 않는다. 전체 대화나 전체 
 
 BLOCKED 종료 시 대상 Issue, 최종 BLOCKED 상태, Attempt 횟수(예: `2/2`), 마지막 실패 원인, 마지막 테스트 또는 빌드 결과, 수정했던 파일, 미검증 항목, 향후 Attempt Log 경로, Human이 결정해야 할 사항을 즉시 보고한다.
 
-향후 Attempt Log 경로는 `logs/issues/issue-{번호}/attempt-log.md`를 사용한다. 실제 로그 작성은 후속 단계에서 구현한다. GitHub 연결 단계에서는 BLOCKED 시 상태, Attempt 횟수, 마지막 실패, 로그 경로, Human 결정 필요 사항을 Issue 또는 PR 댓글로 알리도록 구현할 예정이며 현재는 댓글을 작성하지 않는다.
+Attempt Log 경로는 `logs/issues/issue-{번호}/attempt-log.md`를 사용한다. GitHub 연결 단계에서는 BLOCKED 시 상태, Attempt 횟수, 마지막 실패, 로그 경로, Human 결정 필요 사항을 Issue 또는 PR 댓글로 알리도록 구현할 예정이며 현재는 댓글을 작성하지 않는다.
 
-## 6. Human Gate와 실행 경계
+## 6. Enforce 연결의 현재 한계
+
+- `require-log.sh`는 독립 실행형 검사 스크립트다.
+- 현재 연결은 `coffee-order-issue-loop`를 수행하는 메인 Codex의 절차적 호출이다.
+- Codex native hook으로 자동 등록된 상태가 아니다.
+- Git commit, push 또는 CI 수준의 외부 차단은 구현되지 않았다.
+- Git hook과 GitHub Actions 연결은 후속 단계에서 구현한다.
+- GitHub Issue 또는 PR 댓글 알림도 아직 구현되지 않았다.
+
+## 7. Human Gate와 실행 경계
 
 - 데이터 삭제, DB Migration 실행, 인증·인가 정책 변경, 외부 비용 발생 작업은 Human Gate를 요구한다.
 - 미승인 HIGH 위험 설계는 자동 진행하지 않는다.
@@ -148,7 +186,7 @@ BLOCKED 종료 시 대상 Issue, 최종 BLOCKED 상태, Attempt 횟수(예: `2/2
 
 상세 경계는 `AGENTS.md`, `docs/06_CODEX_RULES.md`, `docs/11_AI_AUTOMATION_EXPERIMENT.md`의 원본 규칙을 따른다.
 
-## 7. GitHub 처리 범위
+## 8. GitHub 처리 범위
 
 현재는 Issue 내용을 확인하고 Issue와 변경사항의 연결 정보를 정리하며, PASS일 때 PR 제목과 본문 초안만 작성한다.
 
