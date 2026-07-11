@@ -25,12 +25,23 @@ Planner·Implementer·Reviewer 서브에이전트, logs 구조, scripts 또는 h
 ## 3. 상태 원칙
 
 - `PASS`: 완료 기준, 필수 검증, 독립 Review, 필요한 Human Gate를 모두 충족하고 Issue 범위 이탈과 핵심 미검증 항목이 없다.
-- `FAIL`: 원인과 수정 방향이 확인된 구현 또는 검증 문제이며 재시도 한도 안에서 수정할 수 있다.
+- `FAIL`: Attempt 1에서 원인과 수정 방향이 명확하고 자동 수정 1회가 가능한 상태다.
 - `BLOCKED`: Issue나 필수 컨텍스트 부족, 요구사항 불명확, 저장소 충돌, 보호 경계, 권한·환경 문제, Human Gate, 재시도 한도 때문에 자동 진행할 수 없다.
 
 실패한 검증을 성공으로 보고하지 않는다. 실행하지 않은 검증을 통과로 기록하지 않는다.
 
-## 4. 전체 실행 절차
+## 4. 재시도 한도
+
+- `MAX_ATTEMPTS = 2`
+- Attempt 1은 최초 구현이다.
+- Attempt 2는 Reviewer FAIL 이후 허용되는 유일한 자동 수정 시도다.
+- Attempt 2 이후 Reviewer가 다시 수정 필요 문제를 발견하면 `BLOCKED: RETRY LIMIT`로 종료한다.
+- 같은 실패 원인이 반복되면 남은 횟수와 관계없이 즉시 `BLOCKED: REPEATED FAILURE`로 종료한다.
+- Reviewer가 BLOCKED를 반환하면 자동 수정하지 않는다.
+- 재시도 횟수는 Issue 단위로 계산한다.
+- 새로운 Issue나 Human이 승인한 새 계획은 별도 실행으로 취급한다.
+
+## 5. 전체 실행 절차
 
 ### 1. Inspect Issue
 
@@ -90,19 +101,17 @@ Planner·Implementer·Reviewer 서브에이전트, logs 구조, scripts 또는 h
 
 ### 8. Fix
 
-- 목적: Verify 실패 또는 Reviewer FAIL의 확인된 원인과 수정 방향 안에서만 변경한다.
+- 목적: Attempt 1의 Reviewer FAIL일 때만 Implementer를 다시 호출해 자동 Fix를 한 번 수행한다.
 - 다음 단계 조건: 수정이 끝나고 다시 검증할 수 있다.
-- BLOCKED 조건: Issue 범위 밖 변경이 필요하면 `BLOCKED: ISSUE SCOPE CHANGE REQUIRED`, 재시도 한도에 도달하면 `BLOCKED: RETRY LIMIT`로 종료한다.
+- BLOCKED 조건: Issue 범위 밖 변경이나 설계 재결정이 필요하면 `BLOCKED: ISSUE SCOPE CHANGE REQUIRED`, Reviewer 지침만으로 안전하게 수정할 수 없으면 `BLOCKED: REVIEW INSTRUCTION INSUFFICIENT`로 종료한다.
 
-Fix는 Implementer 서브에이전트를 다시 호출하고 Reviewer의 수정 지침만 전달한다.
+Planner 계획 전체를 다시 작성하지 않는다. 전체 대화나 전체 리뷰 대신 실패 원인, 수정 대상, 수정 지침, 수정 금지 범위, 재검증 명령만 포함한 Reviewer 최소 수정 패킷을 Implementer에게 전달한다.
 
 ### 9. Re-verify
 
-- 목적: 수정 후 Verify와 Review를 다시 수행한다.
-- 다음 단계 조건: PASS이면 Record로 이동하고, FAIL이면 한도 안에서 Fix로 돌아간다.
-- BLOCKED 조건: Reviewer가 BLOCKED를 반환하거나 재시도 한도에 도달하면 자동 수정을 중단한다.
-
-무한 반복을 막기 위한 재시도 한도를 둔다. 구체적인 횟수와 강제 방식은 scripts 또는 hooks 구축 단계에서 결정한다.
+- 목적: Attempt 2에서 Verify와 Review를 다시 수행한다.
+- 다음 단계 조건: PASS이면 Record로 이동한다.
+- BLOCKED 조건: 수정 필요 문제가 남으면 추가 Fix 없이 `BLOCKED: RETRY LIMIT`, 이전과 동일한 실패이면 `BLOCKED: REPEATED FAILURE`로 종료하고 즉시 Human Handoff로 이동한다. Reviewer가 BLOCKED를 반환해도 즉시 Human Handoff로 이동한다.
 
 ### 10. Record
 
@@ -124,7 +133,11 @@ Fix는 Implementer 서브에이전트를 다시 호출하고 Reviewer의 수정 
 - 다음 단계 조건: Human이 후속 GitHub 작업 또는 종료 여부를 판단한다.
 - 종료 경계: Human 승인 없이는 Commit, Push, PR 실제 생성, Merge, 운영 배포로 진행하지 않는다.
 
-## 5. Human Gate와 실행 경계
+BLOCKED 종료 시 대상 Issue, 최종 BLOCKED 상태, Attempt 횟수(예: `2/2`), 마지막 실패 원인, 마지막 테스트 또는 빌드 결과, 수정했던 파일, 미검증 항목, 향후 Attempt Log 경로, Human이 결정해야 할 사항을 즉시 보고한다.
+
+향후 Attempt Log 경로는 `logs/issues/issue-{번호}/attempt-log.md`를 사용한다. 실제 로그 작성은 후속 단계에서 구현한다. GitHub 연결 단계에서는 BLOCKED 시 상태, Attempt 횟수, 마지막 실패, 로그 경로, Human 결정 필요 사항을 Issue 또는 PR 댓글로 알리도록 구현할 예정이며 현재는 댓글을 작성하지 않는다.
+
+## 6. Human Gate와 실행 경계
 
 - 데이터 삭제, DB Migration 실행, 인증·인가 정책 변경, 외부 비용 발생 작업은 Human Gate를 요구한다.
 - 미승인 HIGH 위험 설계는 자동 진행하지 않는다.
@@ -135,7 +148,7 @@ Fix는 Implementer 서브에이전트를 다시 호출하고 Reviewer의 수정 
 
 상세 경계는 `AGENTS.md`, `docs/06_CODEX_RULES.md`, `docs/11_AI_AUTOMATION_EXPERIMENT.md`의 원본 규칙을 따른다.
 
-## 6. GitHub 처리 범위
+## 7. GitHub 처리 범위
 
 현재는 Issue 내용을 확인하고 Issue와 변경사항의 연결 정보를 정리하며, PASS일 때 PR 제목과 본문 초안만 작성한다.
 
