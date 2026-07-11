@@ -4,7 +4,7 @@
 
 ## 1. 작업 흐름
 
-1. 대상 GitHub Issue 또는 명확한 작업 목표를 확인한다.
+1. 대상 GitHub Issue를 확인한다.
 2. 아래 컨텍스트 라우팅에서 필요한 문서만 찾아 읽는다.
 3. Issue의 목적, 범위, 완료 기준을 확인한다.
 4. Issue 범위 안에서 계획, 구현, 검증을 수행한다.
@@ -28,7 +28,7 @@
 | Issue 작성 | `.github/ISSUE_TEMPLATE/feature.md` |
 | PR 작성 | `.github/PULL_REQUEST_TEMPLATE.md` |
 
-> `docs/testing/`과 `.codex/skills/`는 후속 단계에서 생성할 예정이다.
+> `docs/testing/`은 후속 단계에서 생성할 예정이다.
 
 ## 3. 반드시 지킬 경계
 
