@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# 이 Hook은 로컬 보호 장치다. --no-verify, core.hooksPath 해제,
+# Hook 삭제·변경, 미설치 환경에서는 우회될 수 있다.
+# 원격 강제는 후속 GitHub Actions와 브랜치 보호 규칙에서 보완한다.
+
+issue=${HARNESS_ISSUE:-}
+attempt=${HARNESS_ATTEMPT:-}
+status=${HARNESS_STATUS:-}
+repo_root=""
+branch=""
+
+block() {
+  printf '%s\n' "$1" >&2
+  exit 1
+}
+
+if ! printf '%s' "$issue" | grep -Eq '^[1-9][0-9]*$'; then
+  block 'PUSH BLOCKED: HARNESS_ISSUE is required'
+fi
+
+if printf '%s' "$attempt" | grep -Eq '^[0-9]+$' && [ "$attempt" -gt 2 ]; then
+  block 'PUSH BLOCKED: RETRY LIMIT'
+fi
+
+case "$attempt" in
+  1|2) ;;
+  *) block 'PUSH BLOCKED: HARNESS_ATTEMPT must be 1 or 2' ;;
+esac
+
+case "$status" in
+  PASS) ;;
+  FAIL)
+    printf '%s\n' 'PUSH BLOCKED: implementation is not in a final PASS state' >&2
+    printf 'Status: %s\n' "$status" >&2
+    exit 1
+    ;;
+  BLOCKED)
+    printf '%s\n' 'PUSH BLOCKED: Human review is required' >&2
+    printf 'Status: %s\n' "$status" >&2
+    exit 1
+    ;;
+  *) block 'PUSH BLOCKED: HARNESS_STATUS must be PASS, FAIL, or BLOCKED' ;;
+esac
+
+if ! repo_root=$(git rev-parse --show-toplevel 2>/dev/null); then
+  block 'PUSH BLOCKED: git repository root not found'
+fi
+
+if ! branch=$(git -C "$repo_root" branch --show-current 2>/dev/null); then
+  block 'PUSH BLOCKED: current branch not found'
+fi
+
+if [ -z "$branch" ]; then
+  block 'PUSH BLOCKED: detached HEAD is not allowed'
+fi
+
+case "$branch" in
+  main|develop)
+    block 'PUSH BLOCKED: direct push to protected branch is not allowed'
+    ;;
+esac
+
+require_log="${repo_root}/.codex/hooks/require-log.sh"
+attempt_log="logs/issues/issue-${issue}/attempt-log.md"
+verification_log="logs/verification-log.md"
+
+if [ ! -f "$require_log" ]; then
+  block 'PUSH BLOCKED: require-log.sh not found'
+fi
+
+if [ ! -x "$require_log" ]; then
+  block 'PUSH BLOCKED: require-log.sh is not executable'
+fi
+
+set +e
+bash "$require_log" \
+  --issue "$issue" \
+  --attempt "$attempt" \
+  --status "$status"
+enforcement_rc=$?
+set -e
+
+if [ "$enforcement_rc" -ne 0 ]; then
+  printf '%s\n' 'PUSH BLOCKED: harness enforcement failed' >&2
+  printf 'Issue: #%s\n' "$issue" >&2
+  printf 'Attempt: %s/2\n' "$attempt" >&2
+  printf 'Status: %s\n' "$status" >&2
+  printf 'Attempt Log: %s\n' "$attempt_log" >&2
+  printf 'Verification Log: %s\n' "$verification_log" >&2
+  printf '%s\n' 'Human review required: YES' >&2
+  exit 1
+fi
+
+printf '%s\n\n' 'PUSH CHECK PASSED'
+printf 'Issue: #%s\n' "$issue"
+printf 'Attempt: %s/2\n' "$attempt"
+printf 'Status: PASS\n'
+printf 'Branch: %s\n' "$branch"
+exit 0
