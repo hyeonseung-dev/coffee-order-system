@@ -11,7 +11,10 @@ import org.springframework.http.HttpStatus;
 public enum ErrorCode {
 
 	USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "사용자를 찾을 수 없습니다."),
+	MENU_NOT_FOUND(HttpStatus.NOT_FOUND, "MENU_NOT_FOUND", "메뉴를 찾을 수 없습니다."),
 	POINT_WALLET_NOT_FOUND(HttpStatus.NOT_FOUND, "POINT_WALLET_NOT_FOUND", "포인트 지갑을 찾을 수 없습니다."),
+	INACTIVE_MENU(HttpStatus.BAD_REQUEST, "INACTIVE_MENU", "비활성 메뉴는 주문할 수 없습니다."),
+	INSUFFICIENT_POINT(HttpStatus.BAD_REQUEST, "INSUFFICIENT_POINT", "포인트 잔액이 부족합니다."),
 	INVALID_CHARGE_AMOUNT(HttpStatus.BAD_REQUEST, "INVALID_CHARGE_AMOUNT", "충전 금액은 0보다 커야 합니다."),
 	INVALID_REQUEST(HttpStatus.BAD_REQUEST, "INVALID_REQUEST", "요청 값이 올바르지 않습니다."),
 	INVALID_REQUEST_BODY(HttpStatus.BAD_REQUEST, "INVALID_REQUEST_BODY", "요청 본문을 읽을 수 없습니다.");

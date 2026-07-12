@@ -4,15 +4,7 @@
 
 `logs` 디렉터리는 `coffee-order-issue-loop` 실행 과정과 검증 근거를 저장하는 기록의 원본 위치다.
 
-로그는 다음 목적을 가진다.
-
-- 이전 실패 원인을 다음 시도에 전달한다.
-- 동일한 실패 반복을 방지한다.
-- 실제 테스트와 빌드 실행 근거를 보존한다.
-- Planner, Implementer, Reviewer 결과를 추적한다.
-- Human 개입 시점과 이유를 기록한다.
-- PASS, FAIL, BLOCKED 판정 근거를 보존한다.
-- PR 작성과 최종 회고에 사용할 실행 이력을 제공한다.
+로그는 Attempt, 변경 파일, 실행한 검증 명령과 결과, Reviewer 판정, 최종 상태만 보존한다.
 
 로그는 에이전트의 최종 설명을 대신하는 증거다. 실행하지 않은 명령을 실행한 것으로 기록하지 않는다. 실패한 결과를 성공으로 변경하지 않는다.
 
@@ -28,7 +20,7 @@
 logs/issues/issue-{번호}/attempt-log.md
 ```
 
-현재 단계에서는 실제 Issue 디렉터리를 만들지 않는다. 양식은 `logs/attempt-log-template.md`를 사용한다.
+양식은 `logs/attempt-log-template.md`를 사용한다.
 
 ### Verification Log
 

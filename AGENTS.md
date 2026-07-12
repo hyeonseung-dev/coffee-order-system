@@ -23,12 +23,10 @@
 | 기존 AI 작업 흐름 | `docs/05_AI_WORKFLOW.md` |
 | Codex 작업 범위와 중단 조건 | `docs/06_CODEX_RULES.md` |
 | AI 자동화 방향과 위험도 기준 | `docs/11_AI_AUTOMATION_EXPERIMENT.md` |
-| 테스트 범위와 검증 단계 | `docs/testing/test-strategy.md` |
-| 실패와 재시도 기록 | `docs/testing/evidence/` |
+| 테스트 범위와 검증 단계 | `logs/README.md`, `logs/verification-log.md` |
+| 실패와 재시도 기록 | `logs/issues/issue-<번호>/`, `logs/attempt-log-template.md` |
 | Issue 작성 | `.github/ISSUE_TEMPLATE/feature.md` |
 | PR 작성 | `.github/PULL_REQUEST_TEMPLATE.md` |
-
-> `docs/testing/`은 후속 단계에서 생성할 예정이다.
 
 ## 3. 반드시 지킬 경계
 
