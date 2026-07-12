@@ -20,6 +20,7 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
@@ -37,6 +38,7 @@ import static org.mockito.Mockito.when;
  * 사용해 mock 기반 단위 테스트만으로는 확인할 수 없는 트랜잭션 경계를 검증한다.
  */
 @SpringBootTest
+@ActiveProfiles("test")
 @Import(OrderTransactionRollbackIntegrationTest.EventRecorderConfiguration.class)
 class OrderTransactionRollbackIntegrationTest {
 
