@@ -1,238 +1,278 @@
 ---
 name: coffee-order-issue-loop
-description: 하나의 GitHub Issue를 확인하고 컨텍스트 라우팅, 계획, 구현, 검증, 리뷰, 수정, 기록, PR 준비까지 처리하는 저장소 전용 절차다. 사용자가 coffee-order-issue-loop 실행을 명시하거나 AGENTS.md가 이 Skill로 라우팅한 Issue 단위 작업에 사용한다.
+description: READY GitHub Issue를 기준으로 위험도 확인, 구현, 테스트·검증, Troubleshooting Gate, 간단 리뷰, Commit·Push·PR 인계까지 수행하는 저장소 전용 절차다.
 ---
 
 # Coffee Order Issue Loop
 
 ## 1. 목적
 
-- 하나의 GitHub Issue를 계획부터 PR 준비까지 일관된 절차로 처리한다.
-- Human이 각 실행 단계를 별도 프롬프트로 연결하는 작업을 줄인다.
-- 메인 Codex가 최소 Preflight, 짧은 계획, 구현, 검증, 간단한 Reviewer 판정과 기록을 순서대로 수행한다.
-- Merge와 운영 배포는 자동 수행하지 않는다.
+- Human의 반복 지시 없이 READY Issue를 PR까지 처리한다.
+- Codex는 코드, 테스트, 로컬 검증에 집중한다.
+- 설계·정합성·보안·성능에 영향을 주는 문제는 Human에게 반환한다.
+- PR을 ChatGPT와 Human으로의 공식 인계 지점으로 사용한다.
+- Merge는 어떤 경우에도 자동 수행하지 않는다.
 
-## 2. 호출 조건과 구축 단계 제한
+## 2. 필수 입력
 
-사용자가 이 Skill을 명시적으로 호출하거나 `AGENTS.md`가 이 경로로 라우팅할 때 사용한다. 자동 발동을 가정하지 않는다.
+- GitHub Issue 번호 또는 URL
+- Issue 상태 `READY`
+- 작업 목적과 완료 조건
+- 제외 범위
+- 수정 허용·금지 범위
+- 위험도 `LOW | MEDIUM | HIGH`
+- 테스트 계획
+- 검증 방법과 성공 기준
+- 예상 트러블슈팅과 Human 공유 조건
+- 필요한 ADR과 Human 승인 상태
 
-필수 입력은 **Issue 번호 또는 Issue URL**이다. Issue가 없으면 `BLOCKED: ISSUE REQUIRED`로 종료한다. Issue 본문에 작업 목적, 구현 범위, 완료 기준, 수정 가능·금지 범위, 검증 방법이 부족하면 임의로 보충하지 않고 `BLOCKED: WORK CONTEXT REQUIRED`로 종료한다. 위험도는 Issue에 명시된 Human 승인 최종 값을 사용하고, 누락 시 `MEDIUM`으로 처리한다.
+필수 입력이 없으면 임의로 보충하지 않고 `BLOCKED: ISSUE REFINEMENT REQUIRED`로 종료한다.
 
-추가 Human 설계 승인은 Issue에 `Human design approval required before implementation` 문구가 명시된 경우에만 요구한다.
+## 3. 상태
 
-Planner·Implementer·Reviewer 서브에이전트, logs 구조, scripts 또는 hooks, GitHub Issue·PR 연결이 모두 구축되기 전에는 실제 GitHub Issue를 대상으로 이 Skill을 실행하거나 검증하지 않는다.
+- `PASS`: 구현, 필수 테스트·빌드·diff 검증과 간단 Review가 완료돼 PR 생성 가능
+- `FAIL: FIXABLE`: Issue 범위 안에서 일반 디버깅으로 수정 가능
+- `BLOCKED`: Human 판단, 설계 변경, 환경·권한 조치가 필요해 자동 진행 불가
 
-## 3. 상태 원칙
+실행하지 않은 검증을 통과로 기록하지 않는다.
 
-- `PASS`: 완료 기준, 필수 검증, 독립 Review, 필요한 Human Gate를 모두 충족하고 Issue 범위 이탈과 핵심 미검증 항목이 없다.
-- `FAIL`: Attempt 1에서 원인과 수정 방향이 명확하고 자동 수정 1회가 가능한 상태다.
-- `BLOCKED`: Issue나 필수 컨텍스트 부족, 요구사항 불명확, 저장소 충돌, 보호 경계, 권한·환경 문제, Human Gate, 재시도 한도 때문에 자동 진행할 수 없다.
+## 4. 위험도별 진입 규칙
 
-실패한 검증을 성공으로 보고하지 않는다. 실행하지 않은 검증을 통과로 기록하지 않는다.
+### LOW
 
-## 4. 재시도 한도
+기존 패턴을 따르는 명확한 작업이다.
 
-- `MAX_ATTEMPTS = 2`
-- Attempt 1은 최초 구현이다.
-- Attempt 2는 Reviewer FAIL 이후 허용되는 유일한 자동 수정 시도다.
-- Attempt 2 이후 Reviewer가 다시 수정 필요 문제를 발견하면 `BLOCKED: RETRY LIMIT`로 종료한다.
-- 같은 실패 원인이 반복되면 남은 횟수와 관계없이 즉시 `BLOCKED: REPEATED FAILURE`로 종료한다.
-- Reviewer가 BLOCKED를 반환하면 자동 수정하지 않는다.
-- 재시도 횟수는 Issue 단위로 계산한다.
-- 새로운 Issue나 Human이 승인한 새 계획은 별도 실행으로 취급한다.
+- 최소 Preflight 후 바로 구현한다.
+- 별도 Planner 승인 없이 구현부터 PR 생성까지 진행한다.
+- 관련 테스트와 전체 검증은 생략하지 않는다.
 
-## 5. 전체 실행 절차
+### MEDIUM
+
+설계 영향이 있는 작업이다.
+
+- Planner가 짧은 계획, 영향 범위, 수정 파일, 테스트를 작성한다.
+- Human에게 계획을 보고하고 승인 전에는 코드를 수정하지 않는다.
+- 승인 후 구현부터 PR 생성까지 진행한다.
+
+### HIGH
+
+데이터 손실, 보안, 동시성, 운영 장애 가능성이 큰 작업이다.
+
+- 관련 ADR이 Accepted인지 확인한다.
+- 명시적 Human 구현 승인을 확인한다.
+- 조건이 부족하면 `BLOCKED: HIGH RISK APPROVAL REQUIRED`다.
+- 구현 중 새로운 설계 선택이 발견되면 즉시 Troubleshooting Gate로 전환한다.
+
+별도 실행 모드를 추가하지 않는다. 위험도 하나로 Gate 수준을 결정한다.
+
+## 5. 실행 절차
 
 ### 1. Inspect Issue
 
-- 목적: Issue 번호 또는 URL로 대상 Issue와 본문의 필수 입력을 확인한다.
-- 다음 단계 조건: Issue와 필수 작업 컨텍스트가 모두 확인된다.
-- BLOCKED 조건: Issue가 없으면 `BLOCKED: ISSUE REQUIRED`, 필수 내용이 부족하면 `BLOCKED: WORK CONTEXT REQUIRED`다.
+확인 항목:
+
+- Issue 상태가 READY인지
+- 위험도와 Human Gate가 명확한지
+- 완료 조건이 테스트·검증 가능한지
+- 관련 ADR 상태가 올바른지
+- 수정 경계와 문서 영향이 명확한지
+
+DRAFT Issue는 구현하지 않는다.
 
 ### 2. Route Context
 
-- 목적: `AGENTS.md`의 라우팅에 따라 Issue에 필요한 원본 문서만 읽는다.
-- 다음 단계 조건: 요구사항, 완료 기준, 관련 설계와 작업 경계를 설명할 수 있다.
-- BLOCKED 조건: 문서가 충돌하거나 요구사항을 확정할 수 없으면 `BLOCKED: REQUIREMENT UNCLEAR`다.
+`AGENTS.md`의 라우팅에 따라 현재 Issue에 필요한 문서와 코드만 읽는다.
 
-### 3. Preflight
+모든 문서와 전체 저장소를 반복해서 읽지 않는다.
 
-- 목적: 현재 브랜치, 작업 트리, 대상 Issue, Issue에 직접 연결된 문서, 명확한 요구사항 충돌과 필수 실행 환경만 확인한다.
-- 다음 단계 조건: 기존 변경과 충돌 없이 Issue 범위에서 작업할 수 있다.
-- BLOCKED 조건: 잘못된 브랜치는 `BLOCKED: WRONG BRANCH`, 무관한 변경이나 충돌 가능성은 `BLOCKED: WORKTREE NOT CLEAN`, 보호 파일 변경 필요는 `BLOCKED: PROTECTED FILE CHANGE REQUIRED`다.
+### 3. Minimal Preflight
 
-기존 변경사항을 임의로 삭제하거나 수정하지 않는다. 상세 보호 경계와 중단 조건은 `docs/06_CODEX_RULES.md`를 따른다.
+```bash
+git branch --show-current
+git status
+git log --oneline -5
+```
+
+확인 항목:
+
+- 올바른 작업 브랜치인지
+- 기존 미커밋 변경과 충돌하지 않는지
+- 보호 파일 변경이 필요한지
+- 관련 테스트와 실행 환경이 있는지
+
+형식적 메타데이터 누락만으로 BLOCKED 처리하지 않는다.
 
 ### 4. Plan
 
-- 목적: Planner로 전환해 Issue와 관련 컨텍스트를 분석하고 실행 계획과 검증 기준을 작성한다.
-- 다음 단계 조건: 계획이 Issue 범위, 완료 기준, 위험도와 일치한다.
-- BLOCKED 조건: 범위 확장, 보호 경계 위반, Issue가 명시한 추가 Human 설계 승인 누락이면 BLOCKED로 전환한다.
+- LOW: 메인 Codex가 수정 파일, 구현 순서, 테스트만 짧게 정리하고 바로 진행한다.
+- MEDIUM: `.codex/agents/planner.md`를 사용해 계획하고 Human 승인 후 진행한다.
+- HIGH: Accepted ADR과 Human 승인 여부를 확인한 뒤 계획한다.
 
-Planner는 구현 범위, 수정 예상 파일, 구현 순서, 검증할 테스트, 제외 범위만 짧게 작성한다.
+계획은 다음 다섯 항목만 포함한다.
 
-이 단계에서는 `.codex/agents/planner.md` 서브에이전트를 호출한다.
+- 구현 범위
+- 수정 예상 파일
+- 구현 순서
+- 검증할 테스트
+- 제외 범위
 
 ### 5. Implement
 
-- 목적: 승인된 계획과 Issue 범위 안에서 구현과 테스트 작성을 수행한다.
-- 다음 단계 조건: 계획된 변경이 완료되고 검증 가능한 상태다.
-- BLOCKED 조건: Issue 밖 기능, 불필요한 리팩터링, 보호 경계 위반, 문서와 다른 구현이 필요하면 BLOCKED로 전환한다.
+`.codex/agents/implementer.md` 기준으로 다음을 수행한다.
 
-세부 역할 규칙과 출력 형식은 역할 정의 단계에서 별도로 정의한다.
+- Issue 범위 안에서 최소 변경
+- production 코드와 필요한 테스트 작성
+- 기존 API·DB·예외 계약 유지
+- 실패와 롤백 흐름 검증
+- 불필요한 리팩터링과 새 기술 도입 금지
 
-이 단계에서는 `.codex/agents/implementer.md` 서브에이전트를 호출한다.
+Markdown 문서는 Issue에서 허용한 경우에만 수정한다.
 
-### 6. Verify
+### 6. Debug or Troubleshooting Gate
 
-- 목적: 관련 테스트, 전체 빌드, `git diff --check`를 한 Attempt 안에서 각 한 번만 실행한다. 전체 빌드가 전체 테스트를 포함하면 별도 전체 테스트는 반복하지 않는다.
-- 다음 단계 조건: 실행 결과와 미실행 항목이 사실대로 정리된다.
-- BLOCKED 조건: 권한이나 환경 문제는 같은 Attempt 안에서 환경변수·서비스 상태·DB 연결·직접 환경변수 주입·`--no-daemon` 재실행을 한 차례 진단한다. 이후에도 핵심 검증을 수행할 수 없으면 BLOCKED로 전환한다. 검증 실패 자체는 FAIL로 Review에 전달한다.
+#### 자체 해결
 
-### 7. Review
+다음은 Issue 범위 안에서 스스로 해결한다.
 
-- 목적: Reviewer가 Issue 핵심 요구사항, 현재 diff, Verify 결과만 확인해 `PASS`, `FAIL: FIXABLE`, `BLOCKED` 중 하나로 간단히 판정한다.
-- 다음 단계 조건: PASS, FAIL, BLOCKED 판정과 근거를 확정하고 Record로 이동한다.
-- BLOCKED 조건: 필수 근거 부족이나 Issue가 명시한 Human Gate 누락이면 BLOCKED로 판정하며 자동 수정하지 않는다.
+- 컴파일 오류
+- import 누락
+- 단순 테스트 데이터 오류
+- 명확한 Mock 설정 오류
+- 정적 검사와 코드 스타일 오류
+- 기존 패턴으로 해결 가능한 테스트 실패
 
-Reviewer는 테스트를 재실행하거나 코드를 수정하지 않으며, `FAIL: FIXABLE`일 때 중요도 순 최대 3개만 지시한다.
+#### Human 보고 후 중단
 
-이 단계에서는 `.codex/agents/reviewer.md` 서브에이전트를 호출한다.
+다음은 `BLOCKED: TROUBLESHOOTING GATE`다.
 
-### 8. Fix
+- 요구사항 변경 필요
+- API 계약, DB 스키마, 트랜잭션 경계 변경 필요
+- 인증·권한 정책 변경 필요
+- 동시성 정합성, 데이터 손실, 중복 처리 위험
+- 테스트 삭제·비활성화·약화 필요
+- 성능 목표 미달 또는 운영 장애 가능성
+- ADR과 구현 충돌
+- 임시 우회와 근본 해결 중 선택 필요
+- Issue 범위 밖 또는 보호 파일 변경 필요
 
-- 목적: Attempt 1의 Reviewer FAIL일 때만 Implementer를 다시 호출해 자동 Fix를 한 번 수행한다.
-- 다음 단계 조건: 수정이 끝나고 다시 검증할 수 있다.
-- BLOCKED 조건: Issue 범위 밖 변경이나 설계 재결정이 필요하면 `BLOCKED: ISSUE SCOPE CHANGE REQUIRED`, Reviewer 지침만으로 안전하게 수정할 수 없으면 `BLOCKED: REVIEW INSTRUCTION INSUFFICIENT`로 종료한다.
+보고 형식:
 
-Planner 계획 전체를 다시 작성하지 않는다. 전체 대화나 전체 리뷰 대신 실패 원인, 수정 대상, 수정 지침, 수정 금지 범위, 재검증 명령만 포함한 Reviewer 최소 수정 패킷을 Implementer에게 전달한다.
+- 발생한 문제
+- 재현 조건
+- 확인된 사실
+- 추정 원인
+- 시도한 방법과 결과
+- 영향 범위
+- 가능한 선택지
+- 권장 방향
+- 필요한 Human 결정
 
-### 9. Re-verify
+### 7. Verify
 
-- 목적: Attempt 2에서 Verify와 Review를 다시 수행한다.
-- 다음 단계 조건: PASS이면 PASS 근거를 확정하고 Record로 이동한다.
-- BLOCKED 조건: 수정 필요 문제가 남으면 추가 Fix 없이 `BLOCKED: RETRY LIMIT`, 이전과 동일한 실패이면 `BLOCKED: REPEATED FAILURE`로 판정하고 Record로 이동한다. Reviewer가 BLOCKED를 반환해도 Record로 이동한다.
+다음 순서로 검증한다.
+
+1. 가장 작은 관련 테스트
+2. 필요한 통합·동시성·성능 테스트
+3. `./gradlew test`
+4. `./gradlew build`
+5. `git diff --check`
+6. `git status`, `git diff --stat`, `git diff`
+
+전체 빌드가 같은 테스트를 반복하는 경우 중복 실행은 줄일 수 있다. 핵심 검증 자체는 생략하지 않는다.
+
+결과를 다음과 같이 구분한다.
+
+- 테스트가 보장하는 것
+- 테스트가 보장하지 않는 것
+- 직접 검증 결과
+- 미검증 항목
+
+### 8. Lightweight Review
+
+`.codex/agents/reviewer.md`가 Issue, 실제 diff, 테스트·빌드 결과만 확인한다.
+
+- 일반 PR: 완료 조건, 범위 이탈, 핵심 버그와 테스트만 검토
+- 중요 PR: 트랜잭션, 정합성, 동시성, 보안, 성능을 추가 검토
+
+Reviewer는 코드를 수정하거나 테스트를 재실행하지 않는다.
+
+판정:
+
+- `PASS`
+- `FAIL: FIXABLE`
+- `BLOCKED`
+
+### 9. Fix and Re-verify
+
+`FAIL: FIXABLE`이면 Issue 범위 안에서 수정하고 다시 검증한다.
+
+고정된 Attempt 숫자를 맞추기 위해 중단하지 않는다. 같은 실패를 반복하거나 설계 변경이 필요하면 Troubleshooting Gate로 전환한다.
 
 ### 10. Record
 
-- 목적: Planner, Implementer, Verify, Reviewer 결과를 Attempt Log에 기록하고 검증 결과를 Verification Log에 기록한 뒤 현재 Attempt와 상태를 확정한다.
-- 다음 단계 조건: Issue 식별자, 실행 단계, 변경 파일, 검증 결과, Review 결과, 재시도 결과, 최종 상태, Human 확인 항목이 사실대로 기록되면 Enforce로 이동한다.
-- BLOCKED 조건: 필수 실행 근거가 누락되어 최종 상태를 설명할 수 없으면 BLOCKED로 전환한다.
+모든 Issue에 장문 로그를 강제하지 않는다.
 
-로그 기록 전에 Enforce를 실행하지 않는다. 검사 실패 후 존재하지 않는 근거를 만들거나 실패 결과를 성공처럼 바꾸지 않는다. 단순 기록 누락이고 실제 근거가 존재할 때만 Record로 돌아가 사실에 맞게 한 번 보완한 뒤 Enforce를 한 번 다시 수행할 수 있다.
+반드시 남길 내용:
 
-### 11. Enforce
+- 실행한 테스트와 결과
+- 미검증 항목
+- Reviewer 판정
+- Human 결정이 필요한 BLOCKED 사유
 
-- 목적: Record 완료 후 `.codex/hooks/require-log.sh`를 절차적으로 호출해 현재 상태가 로그와 재시도 규칙을 충족하는지 읽기 전용으로 검사한다.
-- 다음 단계 조건: 실제 종료 코드와 핵심 출력을 확인한 뒤 아래 상태 전이를 따른다.
-- BLOCKED 조건: PASS 또는 FAIL 검사에서 종료 코드 1이면 모든 자동 진행을 중단하고 Human Handoff로 이동한다. BLOCKED 검사는 종료 코드를 기록한 뒤 GitHub Report dry-run을 거쳐 Human Handoff로 이동한다.
+별도 로그를 남길 가치가 있는 경우:
 
-다음 형식으로 실행한다.
+- 설계 가정과 실제 동작의 차이
+- 트랜잭션·동시성·정합성 문제
+- 성능 목표 미달
+- 캐시·메시징·DB·CI 환경 문제
+- 재발 방지 테스트를 추가한 문제
+- 기술 선택이나 ADR을 변경한 문제
 
-```bash
-bash .codex/hooks/require-log.sh \
-  --issue {issue-number} \
-  --attempt {current-attempt} \
-  --status {PASS|FAIL|BLOCKED}
+단순 오타와 import 수정은 별도 Attempt Log를 강제하지 않는다.
+
+### 11. Commit·Push·PR
+
+PASS이면 별도 단계별 Human 승인 없이 다음을 수행한다.
+
+1. Issue 범위의 코드와 테스트를 Commit한다.
+2. 작업 브랜치를 Push한다.
+3. PR을 생성한다.
+4. PR 본문에 다음을 기록한다.
+   - 관련 Issue
+   - 구현 내용과 주요 변경 파일
+   - 테스트와 빌드 결과
+   - 테스트가 보장하는 것과 보장하지 않는 것
+   - 직접 검증 결과
+   - 의미 있는 트러블슈팅
+   - 미검증 항목
+   - ChatGPT 집중 리뷰 대상
+   - 문서 보완 필요 항목
+5. PR 번호를 Human에게 전달한다.
+
+PR 이후에는 전체 결과를 대화에 복사하지 않는다.
+
+### 12. PR Handoff
+
+Human은 ChatGPT에 PR 번호만 전달한다.
+
+```text
+PR #<번호> 검토하자.
 ```
 
-`issue-number`는 현재 GitHub Issue 번호, `current-attempt`는 실제 시도 번호 1 또는 2, `status`는 Reviewer 또는 실행 흐름이 확정한 실제 상태를 사용한다. Enforce는 로그를 생성하거나 수정하지 않는다.
+ChatGPT는 GitHub에서 Issue, ADR, diff, 커밋, Actions, 테스트와 문서 정합성을 직접 확인한다.
 
-실행 기록에는 명령, Issue 번호, Attempt 번호, 전달 상태, 실제 종료 코드, 핵심 출력, 검사한 Attempt Log와 Verification Log 경로, 다음 단계 결정을 남긴다. 종료 코드를 추정하지 않는다.
+Codex는 리뷰 수정 사항을 같은 브랜치와 같은 PR에 반영한다.
 
-상태별 전이를 적용한다.
+## 6. Merge 경계
 
-- Attempt 1 + PASS: PASS 근거를 Record한 뒤 검사한다. 종료 코드 0이면 GitHub Report, 1이면 Human Handoff로 이동한다.
-- Attempt 1 + FAIL: 실패 원인, 수정 대상, 다음 시도 지침, 수정 금지 범위, 재검증 명령, 자동 재시도 허용 여부를 Record한다. 종료 코드 0일 때만 Fix로 이동해 Implementer를 Attempt 2로 한 번 호출한다. 검사 통과는 수정 패킷의 기록 완료를 의미하며 구현 완료를 의미하지 않는다.
-- Attempt 2 + PASS: 재검증 결과와 최종 PASS 근거를 Record한다. 종료 코드 0이면 GitHub Report, 1이면 Human Handoff로 이동한다.
-- BLOCKED: BLOCKED 상태, Attempt 횟수, 마지막 실패 원인, 마지막 테스트 또는 빌드 결과, 수정된 파일, 미검증 항목, Human 결정 사항을 Record한 뒤 검사한다. 검사 결과를 확인한 후 GitHub Report dry-run을 거쳐 Human Handoff로 이동한다. Fix나 Prepare Pull Request로 이동하지 않는다. 종료 코드 0은 중단 정보가 정상 기록됐다는 의미일 뿐 작업 성공을 뜻하지 않는다.
-- Attempt 2 + FAIL: 방어적으로 스크립트를 실행해 `BLOCKED: RETRY LIMIT`로 상태를 확정하고 Record한 뒤 BLOCKED GitHub Report dry-run과 Human Handoff로 이동한다. Attempt 3을 만들거나 Implementer를 다시 호출하지 않는다.
-
-Enforce가 실패하면 오류 또는 BLOCKED 코드, 누락·위반 항목, 두 로그 경로, Human 확인 항목을 기록한다. 검사 실패를 무시하거나, 실제 상태·Attempt와 다른 값을 전달하거나, 검사를 생략하거나, 직접 GitHub Report·PR 준비 또는 추가 Fix로 우회하지 않는다.
-
-### 12. GitHub Report
-
-- 목적: Enforce 후 최종 PASS 또는 BLOCKED 상태를 `.codex/hooks/report-github-status.sh`로 GitHub 댓글 형식의 dry-run으로 정리한다.
-- 다음 단계 조건: PASS dry-run 종료 코드가 0이면 Prepare Pull Request, BLOCKED이면 dry-run 결과와 관계없이 Human Handoff로 이동한다.
-- BLOCKED 조건: dry-run 종료 코드가 1이면 Prepare Pull Request와 실제 게시를 수행하지 않고 Human Handoff로 이동한다.
-
-Attempt 1의 FAIL은 내부 자동 수정 상태이므로 GitHub Report를 실행하지 않는다. Record와 Enforce를 통과한 뒤 Fix로 이동하며, Attempt 2의 최종 PASS 또는 BLOCKED만 보고 대상으로 삼는다.
-
-기본 실행은 dry-run이다. PASS에서 PR 번호가 아직 없으면 Issue를 대상으로 사용하고, PR이 이미 존재하며 번호를 신뢰할 수 있을 때만 `pr`을 사용한다.
-
-```bash
-bash .codex/hooks/report-github-status.sh \
-  --target issue \
-  --number {issue-number} \
-  --status {PASS|BLOCKED} \
-  --attempt {current-attempt} \
-  --reason "{final-reason}" \
-  --log-path "logs/issues/issue-{issue-number}/attempt-log.md" \
-  --verification-log "logs/verification-log.md" \
-  --changed-files "{changed-files-summary}" \
-  --unverified "{unverified-summary}" \
-  --human-action "{required-human-action}"
+```text
+ChatGPT Merge 금지
+Codex Merge 금지
+자동 Merge 금지
+Human만 Merge 가능
 ```
 
-실행 기록에는 모드, target, 번호, 상태, Attempt, reason, 실제 종료 코드, 핵심 출력, 실제 게시 여부, Human 승인 여부, 다음 단계 결정을 남긴다. dry-run은 `Published: NO`로 기록한다.
-
-PASS는 Enforce 종료 코드 0 이후 dry-run을 실행한다. dry-run 종료 코드가 0이면 Human 승인 없이 publish하지 않은 채 Prepare Pull Request로 이동한다. BLOCKED는 Enforce 결과를 확인한 뒤 dry-run 댓글을 Human에게 보여주고 자동 구현을 종료한다.
-
-dry-run 실패 시 원인, 대상 종류와 번호, 로그 경로와 입력값, 민감 정보 포함 여부를 확인해 Human Handoff로 이동한다. 실패를 무시하거나 FAIL을 다른 상태로 바꾸거나 잘못된 번호로 게시하거나 로그 전체·민감 정보를 게시하지 않는다.
-
-실제 GitHub 댓글, PR 생성·조회·상태 확인·Merge는 연결 도구를 사용한다. 브랜치 생성·전환과 Push는 일반 Git 명령으로 수행하며, `gh` 설치·인증·버전은 확인하거나 요구하지 않는다.
-
-### 13. Prepare Pull Request
-
-- 목적: PASS일 때 Issue 연결 정보, PR 제목, PR 본문 초안을 준비한다.
-- 다음 단계 조건: Reviewer가 PASS이고, Attempt가 1 또는 2이며, Record와 두 로그가 완료되고, Enforce PASS 검사의 실제 종료 코드가 0이고, GitHub Report PASS dry-run 종료 코드가 0이며, 핵심 미검증 항목이 없고 필요한 Human Gate가 충족됐을 때만 진입한다.
-- BLOCKED 조건: FAIL·BLOCKED 상태, Enforce 또는 GitHub Report dry-run 실패, Issue 연결이나 검증 근거 부족 중 하나라도 해당하면 PR 준비를 수행하지 않는다. 실제 댓글 publish는 진입 필수 조건이 아니다.
-
-### 14. Human Handoff
-
-- 목적: 최종 상태, 검증·Review 결과, 미검증 항목, Human 확인 항목, PR 초안을 전달한다.
-- 다음 단계 조건: Human이 후속 GitHub 작업 또는 종료 여부를 판단한다.
-- 종료 경계: Human 승인 없이는 Commit, Push, PR 실제 생성, Merge, 운영 배포로 진행하지 않는다.
-
-BLOCKED 종료 시 대상 Issue, 최종 BLOCKED 상태, Attempt 횟수(예: `2/2`), 마지막 실패 원인, 마지막 테스트 또는 빌드 결과, 수정했던 파일, 미검증 항목, 향후 Attempt Log 경로, Human이 결정해야 할 사항을 즉시 보고한다.
-
-Attempt Log 경로는 `logs/issues/issue-{번호}/attempt-log.md`를 사용한다. GitHub 연결 단계에서는 BLOCKED 시 상태, Attempt 횟수, 마지막 실패, 로그 경로, Human 결정 필요 사항을 Issue 또는 PR 댓글로 알리도록 구현할 예정이며 현재는 댓글을 작성하지 않는다.
-
-Human Handoff에는 Enforce 결과, GitHub Report dry-run 결과, 게시 예정 대상과 번호, 댓글 본문 요약, 실제 publish 승인 필요 여부, Attempt Log와 Verification Log 경로도 포함한다. Human이 게시를 승인하면 별도 `--publish` 명령을 실행하고, 승인하지 않으면 dry-run 결과만 남긴다.
-
-## 6. Enforce 연결의 현재 한계
-
-- `require-log.sh`는 독립 실행형 검사 스크립트다.
-- 현재 연결은 `coffee-order-issue-loop`를 수행하는 메인 Codex의 절차적 호출이다.
-- Codex native hook으로 자동 등록된 상태가 아니다.
-- Git commit, push 또는 CI 수준의 외부 차단은 구현되지 않았다.
-- Git hook과 GitHub Actions 연결은 후속 단계에서 구현한다.
-- GitHub 상태 보고는 다음 단계의 독립 실행형 스크립트 dry-run으로 연결되며 실제 publish는 자동 수행하지 않는다.
-
-## 7. GitHub Report 연결의 현재 한계
-
-- `report-github-status.sh`는 독립 실행형 스크립트다.
-- 현재 연결은 메인 Codex가 절차적으로 호출하는 방식이다.
-- Codex native hook으로 자동 등록된 상태가 아니다.
-- dry-run은 자동 수행할 수 있지만 publish는 Human 승인이 필요하다.
-- 댓글 중복 방지와 기존 댓글 갱신은 구현되지 않았다.
-- GitHub Actions 또는 CI 연동은 구현되지 않았다.
-- 데스크톱, Slack, 이메일 알림은 구현되지 않았다.
-- 댓글 publish 실패가 애플리케이션 구현 결과를 자동으로 변경하지는 않는다.
-
-## 8. Human Gate와 실행 경계
-
-- 데이터 삭제, DB Migration 실행, 인증·인가 정책 변경, 외부 비용 발생 작업은 Human Gate를 요구한다.
-- Issue가 명시한 추가 Human 설계 승인이 없으면 자동 진행하지 않는다.
-- Issue 범위 밖 기능을 추가하거나 불필요한 리팩터링을 하지 않는다.
-- 기존 변경사항을 임의로 삭제하지 않는다.
-- Merge와 운영 배포를 자동 수행하지 않는다.
-- Human 승인 없이 Commit, Push, PR 실제 생성을 수행하지 않는다.
-
-상세 경계는 `AGENTS.md`, `docs/06_CODEX_RULES.md`, `docs/11_AI_AUTOMATION_EXPERIMENT.md`의 원본 규칙을 따른다.
-
-## 9. GitHub 처리 범위
-
-현재는 Issue 내용을 확인하고 Issue와 변경사항의 연결 정보를 정리하며, PASS 또는 BLOCKED의 GitHub Report dry-run과 PASS일 때 PR 제목·본문 초안을 작성한다.
-
-실제 댓글·PR·Merge는 연결 도구가 접근 가능하고 Human 승인이 있을 때만 수행한다. Push는 `git push`의 실제 인증·권한·충돌 오류가 있을 때만 BLOCKED로 처리한다.
+- PASS는 PR 생성 가능 상태이지 Merge 승인 상태가 아니다.
+- Human이 승인 문구를 남겨도 Codex는 Merge 명령이나 GitHub Merge 작업을 수행하지 않는다.
+- 실제 Merge는 Human이 GitHub UI 또는 본인의 명령으로 직접 수행한다.
+- 운영 배포도 별도 Human 승인과 실행이 필요하다.

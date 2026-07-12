@@ -10,6 +10,7 @@
 - 최근 7일 인기 메뉴 TOP 3 조회
 - 인덱싱과 Redis 캐싱 전후 비교
 - Issue 기반 Human-in-the-loop AI-assisted 개발 프로세스 기록
+- 테스트·검증·트러블슈팅과 설계 선택 근거 보존
 
 ## 개발 단계 요약
 
@@ -21,6 +22,18 @@
 | v3 | 선택 도전 | MySQL Replication, Redis Master-Replica, RabbitMQ |
 
 현재 우선순위: v0 -> v1 -> v2 -> v3
+
+## AI-assisted 개발 원칙
+
+```text
+Issue는 작업 계약이다.
+PR은 공식 인계 지점이다.
+테스트와 검증 없는 완료는 완료가 아니다.
+중요한 트러블슈팅은 AI가 임의로 결정하지 않는다.
+Merge는 Human만 수행한다.
+```
+
+ChatGPT는 요구사항·Issue·Markdown·PR 리뷰를 지원하고, Codex는 승인된 READY Issue의 코드·테스트·로컬 검증·PR 생성을 담당한다.
 
 ## 실행 방법
 
@@ -46,3 +59,8 @@
 - [08. Course Plan](docs/08_COURSE_PLAN.md)
 - [09. Troubleshooting](docs/09_TROUBLESHOOTING.md)
 - [10. AI Review Log](docs/10_AI_REVIEW_LOG.md)
+- [11. AI Automation Experiment](docs/11_AI_AUTOMATION_EXPERIMENT.md)
+- [ADR Guide](docs/adr/README.md)
+- [ADR Template](docs/adr/ADR_TEMPLATE.md)
+- [Harness Logs](logs/README.md)
+- [Code Review Template](.github/CODE_REVIEW_TEMPLATE.md)
