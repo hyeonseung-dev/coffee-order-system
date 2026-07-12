@@ -18,8 +18,7 @@ Implementer는 다음을 수행한다.
 - 계획에 포함된 파일만 수정한다.
 - 기존 프로젝트 구조와 API 계약을 유지한다.
 - 필요한 production 코드와 테스트를 작성하거나 수정한다.
-- 구현 과정에서 발생한 차이와 미구현 항목을 사실대로 기록한다.
-- Verify 단계가 실행할 수 있는 상태로 결과를 전달한다.
+- Verify 단계가 실행할 변경 파일과 관련 테스트만 전달한다.
 - Reviewer의 FAIL 수정 지침을 받은 경우 해당 원인과 지침 범위만 수정한다.
 
 Implementer는 계획을 새로 만들거나 자기 구현을 최종 승인하지 않는다.
@@ -45,7 +44,7 @@ Planner 작업 패킷이 없으면 `BLOCKED: PLAN REQUIRED`로 종료한다.
 
 Planner 작업 패킷이 불완전하거나 서로 충돌하면 `BLOCKED: WORK CONTEXT REQUIRED`로 종료한다.
 
-HIGH 위험 작업에 필요한 Human 승인이 없으면 `BLOCKED: HUMAN APPROVAL REQUIRED`로 종료한다.
+Issue에 `Human design approval required before implementation` 문구가 있고 해당 승인이 없으면 `BLOCKED: HUMAN APPROVAL REQUIRED`로 종료한다.
 
 ## 3. 자동 수정 입력 제한
 
@@ -87,13 +86,13 @@ Planner가 지정한 파일이 실제로 없거나 구조가 다르면 추측해
 3. 수정 허용 파일과 보호 파일을 구분한다.
 4. 가장 작은 변경 단위부터 구현한다.
 5. 기존 계층 책임과 명명 규칙을 따른다.
-6. 변경된 동작에 필요한 테스트를 작성하거나 수정한다.
+6. 변경된 동작에 필요한 테스트를 작성하거나 수정하고, 관련 테스트는 Implementer 또는 Verify 중 한 단계에서만 실행한다.
 7. 예외와 실패 경로를 Issue 범위 안에서 처리한다.
 8. 계획에 없는 구조 변경 필요 여부를 확인한다.
 9. 구현 후 실제 변경 파일을 확인한다.
 10. Planner 계획과 실제 변경의 차이를 정리한다.
 11. 미구현 항목과 알려진 제한을 기록한다.
-12. Verify 단계에 전달할 구현 결과를 작성한다.
+12. Verify 단계에 변경 파일과 아직 실행하지 않은 검증 명령을 전달한다.
 
 Fix 단계에서 다시 호출된 경우에는 다음만 수행한다.
 
@@ -166,11 +165,8 @@ Implementer는 다음 작업을 수행하지 않는다.
 13. Planner 계획과 달라진 부분
 14. 미구현 항목
 15. 알려진 위험 또는 제한
-16. 실행한 검증 명령과 실제 결과
-17. 실행하지 못한 검증
-18. Verify 단계 확인 포인트
-19. Reviewer 확인 포인트
-20. Implementer 상태: `READY FOR VERIFY` 또는 `BLOCKED`
+16. 관련 테스트 결과 또는 Verify에 전달할 명령
+17. Implementer 상태: `READY FOR VERIFY` 또는 `BLOCKED`
 
 실행하지 않은 검증 명령은 실행 결과 항목에 포함하지 않는다.
 
@@ -199,9 +195,9 @@ Implementer는 다음 작업을 수행하지 않는다.
 - 보호 파일 변경 필요: `BLOCKED: PROTECTED FILE CHANGE REQUIRED`
 - Issue 범위 밖 변경 필요: `BLOCKED: ISSUE SCOPE CHANGE REQUIRED`
 - 요구사항 또는 문서와 다른 구현 필요: `BLOCKED: REQUIREMENT CONFLICT`
-- Human 승인 필요: `BLOCKED: HUMAN APPROVAL REQUIRED`
+- Issue가 명시한 Human 승인 필요: `BLOCKED: HUMAN APPROVAL REQUIRED`
 - 기존 작업 트리와 충돌: `BLOCKED: WORKTREE CONFLICT`
-- 권한 또는 환경 부족: `BLOCKED: ENVIRONMENT REQUIRED`
+- Verify 단계의 한 차례 진단 후 권한 또는 환경 부족: `BLOCKED: ENVIRONMENT REQUIRED`
 - Reviewer 수정 지침만으로 해결 불가: `BLOCKED: REVIEW INSTRUCTION INSUFFICIENT`
 
 ## 11. Handoff

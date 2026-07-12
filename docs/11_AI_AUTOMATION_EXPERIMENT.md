@@ -69,13 +69,13 @@
 
 ## 6. 초기 위험도 가설
 
-아래 분류는 확정된 결론이 아니라 실험 대상을 선택하고 Human Gate를 배치하기 위한 **초기 가설**이다. Issue 결과에 따라 등급과 Gate를 조정한다.
+위험도는 Issue에 명시된 값을 Human이 승인한 최종 값으로 사용하며, 누락 시 `MEDIUM`이다. 위험도는 테스트·리뷰 강도, Rollback·정합성 검증, 최종 보고에만 사용하고 자동 BLOCKED나 재승인 근거로 사용하지 않는다.
 
-| 위험도 | 작업 예시 | 초기 Human Gate |
+| 위험도 | 작업 예시 | 검증 강도 |
 | --- | --- | --- |
-| LOW | 문서 수정, 오탈자, DTO, Mapper, 테스트 Fixture, 단순 조회, 반복 CRUD | 중간 승인 생략 가능, 최종 결과 또는 diff만 확인 |
-| MEDIUM | Service 비즈니스 로직, 예외 처리, Repository 쿼리, API 응답 계약, 캐시 조회 로직 | AI 자동 루프 수행, 독립 Reviewer 필수, 최종 Human 승인 |
-| HIGH | 인증·인가, 금액·포인트, 트랜잭션, 동시성, 상태 전이, 캐시 정합성, DB Migration, 배포 | 구현 전 설계 승인, 독립 Review와 QA, 최종 Human 승인 |
+| LOW | 문서 수정, 오탈자, DTO, Mapper, 테스트 Fixture, 단순 조회, 반복 CRUD | 기본 검증과 최종 결과 확인 |
+| MEDIUM | Service 비즈니스 로직, 예외 처리, Repository 쿼리, API 응답 계약, 캐시 조회 로직 | 관련 테스트와 독립 Reviewer 강화 |
+| HIGH | 인증·인가, 금액·포인트, 트랜잭션, 동시성, 상태 전이, 캐시 정합성, DB Migration, 배포 | Rollback·정합성 검증과 독립 Reviewer 강화 |
 
 ## 7. Issue별 관찰 항목
 

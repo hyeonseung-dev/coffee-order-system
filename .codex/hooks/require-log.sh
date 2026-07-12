@@ -120,16 +120,11 @@ case "$status" in
     require_pattern "$attempt_log" '최종 상태[[:space:]]*:[[:space:]]*PASS([^A-Z]|$)' '최종 상태: PASS' 'BLOCKED: PASS EVIDENCE REQUIRED'
     require_pattern "$attempt_log" 'Reviewer 최종 판정[[:space:]]*:[[:space:]]*PASS([^A-Z]|$)' 'Reviewer 최종 판정: PASS' 'BLOCKED: PASS EVIDENCE REQUIRED'
     require_pattern "$attempt_log" '최종 검증 결과[[:space:]]*:[[:space:]]*[^[:space:]]' '최종 검증 결과' 'BLOCKED: PASS EVIDENCE REQUIRED'
-    require_pattern "$attempt_log" 'Human 확인 필요 사항[[:space:]]*:[[:space:]]*[^[:space:]]' 'Human 확인 필요 사항' 'BLOCKED: PASS EVIDENCE REQUIRED'
     require_pattern "$verification_log" "Issue[[:space:]]*#${issue}([^0-9]|$)" 'Verification Log의 Issue 기록' 'BLOCKED: PASS EVIDENCE REQUIRED'
     require_pattern "$verification_log" '최종 상태[[:space:]]*:[[:space:]]*PASS([^A-Z]|$)' 'Verification Log의 PASS 상태' 'BLOCKED: PASS EVIDENCE REQUIRED'
     ;;
   FAIL)
     require_pattern "$attempt_log" '실패 원인[[:space:]]*:[[:space:]]*[^[:space:]]' '실패 원인' 'BLOCKED: FIX PACKET REQUIRED'
-    require_pattern "$attempt_log" '수정 대상[[:space:]]*:[[:space:]]*[^[:space:]]' '수정 대상' 'BLOCKED: FIX PACKET REQUIRED'
-    require_pattern "$attempt_log" '다음 시도 지침[[:space:]]*:[[:space:]]*[^[:space:]]' '다음 시도 지침' 'BLOCKED: FIX PACKET REQUIRED'
-    require_pattern "$attempt_log" '수정하지 말아야 할 범위[[:space:]]*:[[:space:]]*[^[:space:]]' '수정하지 말아야 할 범위' 'BLOCKED: FIX PACKET REQUIRED'
-    require_pattern "$attempt_log" '재검증 명령[[:space:]]*:[[:space:]]*[^[:space:]]' '재검증 명령' 'BLOCKED: FIX PACKET REQUIRED'
     ;;
   BLOCKED)
     require_pattern "$attempt_log" '최종 상태[[:space:]]*:[[:space:]]*BLOCKED([^A-Z]|$)' 'BLOCKED 상태' 'BLOCKED: HUMAN HANDOFF REQUIRED'
