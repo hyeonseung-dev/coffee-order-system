@@ -71,7 +71,7 @@ Planner·Implementer·Reviewer 서브에이전트, logs 구조, scripts 또는 h
 
 세부 역할 규칙과 출력 형식은 역할 정의 단계에서 별도로 정의한다.
 
-이 단계에서는 향후 생성될 `.codex/agents/planner.md` 서브에이전트를 호출한다.
+이 단계에서는 `.codex/agents/planner.md` 서브에이전트를 호출한다.
 
 ### 5. Implement
 
@@ -81,7 +81,7 @@ Planner·Implementer·Reviewer 서브에이전트, logs 구조, scripts 또는 h
 
 세부 역할 규칙과 출력 형식은 역할 정의 단계에서 별도로 정의한다.
 
-이 단계에서는 향후 생성될 `.codex/agents/implementer.md` 서브에이전트를 호출한다.
+이 단계에서는 `.codex/agents/implementer.md` 서브에이전트를 호출한다.
 
 ### 6. Verify
 
@@ -97,7 +97,7 @@ Planner·Implementer·Reviewer 서브에이전트, logs 구조, scripts 또는 h
 
 세부 역할 규칙과 출력 형식은 역할 정의 단계에서 별도로 정의한다.
 
-이 단계에서는 향후 생성될 `.codex/agents/reviewer.md` 서브에이전트를 호출한다.
+이 단계에서는 `.codex/agents/reviewer.md` 서브에이전트를 호출한다.
 
 ### 8. Fix
 

@@ -31,11 +31,9 @@ assignees: ''
 - `build.gradle`
 - `settings.gradle`
 - `application.yml`
-- `SecurityConfig`
-- `GlobalExceptionHandler`
 - `README.md`
-- 공통 응답 구조
-- 패키지 구조
+
+보호 파일은 Issue의 수정 범위와 Preflight 판단에 따라 추가한다.
 
 ## 범위 밖 작업
 
@@ -47,7 +45,6 @@ assignees: ''
 - 인증/인가 수정
 - 패키지 구조 변경
 - API 응답 포맷 변경
-- 새로운 브랜치 생성
 
 ## 완료 조건
 
@@ -56,5 +53,4 @@ assignees: ''
 - [ ] 테스트 통과
 - [ ] 빌드 성공
 - [ ] 변경 파일 범위 확인
-- [ ] PR 생성
 - [ ] AI 리뷰 기록 작성

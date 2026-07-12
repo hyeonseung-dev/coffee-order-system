@@ -8,22 +8,19 @@
 
 ## Workflow
 
-1. Human이 기능 요구사항을 정의한다.
-2. ChatGPT가 설계 누락, 테스트 기준, 작업 범위를 검토한다.
-3. Human이 GitHub Issue를 생성하거나 승인한다.
-4. Codex는 구현 전 변경 계획을 보고한다.
-5. Human 승인 후 Codex가 구현한다.
-6. Codex는 테스트, 빌드, git diff 결과를 보고한다.
-7. PR 생성 후 ChatGPT, Codex, Codex Review로 3중 리뷰한다.
-8. AI 리뷰 결과를 기록한다.
-9. Human이 반영할 항목과 보류할 항목을 판단한다.
-10. 리뷰 반영 후 Human이 최종 점검하고 Merge한다.
+1. Human이 GitHub Issue와 작업 범위를 승인한다.
+2. Codex가 Issue와 관련 문서를 확인하고 Preflight를 수행한다.
+3. Preflight를 통과하면 Planner, Implementer, Verify, Reviewer 순으로 실행한다.
+4. Reviewer가 Attempt 1에서 수정 가능한 FAIL을 반환한 경우에만 Attempt 2를 한 번 수행한다.
+5. Codex가 Attempt Log와 Verification Log를 기록하고 Enforce를 실행해 PASS 또는 BLOCKED로 종료한다.
+6. 요구사항 충돌, 보호 파일 변경, 설계 재결정, 권한·환경 문제는 BLOCKED로 Human에게 반환한다.
+7. Commit, Push, PR 생성은 별도 Human 승인 후에만 수행하며, Merge는 Human만 수행한다.
 
 ## 역할 분리
 
-- Human: 최종 의사결정, Merge 판단, Issue 범위 통제
+- Human: Issue와 작업 범위 승인, 최종 의사결정, Merge 판단
 - ChatGPT: 설계 검토, 작업 범위 분리, PR 리뷰
-- Codex: Issue 범위 안의 구현과 자체 검증
+- Codex: 승인된 하네스 실행 안에서 계획, 구현, 검증, 독립 리뷰와 기록 수행
 - GitHub: Issue, Branch, Commit, PR 이력 관리
 
 ## PR 3중 리뷰

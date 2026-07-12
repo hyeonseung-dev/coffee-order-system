@@ -51,10 +51,9 @@ FAIL과 BLOCKED 상태에서는 PR을 생성하지 않습니다.
 
 ### AI 작업 통제
 
-- [ ] ChatGPT가 Codex 구현 프롬프트를 작성했다.
-- [ ] Human이 구현 프롬프트를 검토했다.
-- [ ] Codex는 구현 전 변경 계획을 제출했다.
-- [ ] Human 승인 후 구현을 진행했다.
+- [ ] 승인된 Issue와 작업 범위가 있다.
+- [ ] Codex 하네스의 Planner, Implementer, Verify, Reviewer 절차를 수행했다.
+- [ ] Attempt Log와 Verification Log를 기록했다.
 - [ ] 수정 가능 파일 / 수정 금지 파일을 준수했다.
 - [ ] Issue 범위 밖 기능을 추가하지 않았다.
 
