@@ -86,15 +86,23 @@ logs/issues/issue-{번호}/attempt-log.md
 
 각 실행은 PASS, FAIL, BLOCKED 중 하나로 종료한다. 상태 정의와 전환 규칙은 `.codex/skills/coffee-order-issue-loop/SKILL.md`를 따른다.
 
-## 7. 현재 구축 제한
+## 7. 최소 운영형 차단 기준
 
-현재 단계에서는 로그 구조와 양식만 정의한다. 다음은 아직 수행하지 않는다.
+로그는 사실 확인과 회고를 위한 근거이며, 로그 템플릿·PASS 문자열·Attempt 메타데이터 누락만으로 Push 또는 PR을 차단하지 않는다.
 
-- 실제 Issue 로그 생성
-- 로그 자동 작성
-- 로그 누락 차단
-- 재시도 횟수 강제
-- hooks 또는 scripts 연결
-- GitHub Issue와 PR 자동 연결
+다음 항목은 경고 대상으로 처리한다.
 
-위 기능은 후속 단계에서 구축한다.
+- `HARNESS_ISSUE`, `HARNESS_ATTEMPT`, `HARNESS_STATUS` 누락 또는 형식 오류
+- PR 본문의 하네스 전용 필드 누락
+- Issue별 Attempt Log 또는 PASS 증거 누락
+- GitHub 상태 보고 실패
+
+다음 항목은 실제 품질 또는 저장소 보호 문제이므로 계속 차단한다.
+
+- 필수 하네스 파일 누락
+- Bash 문법 오류
+- Gradle 테스트 실패
+- Gradle 빌드 실패
+- 보호 브랜치 직접 Push
+
+CI의 최종 성공 여부는 PR 본문의 `Harness Status: PASS` 선언이 아니라 실제 테스트와 빌드 결과로 판단한다.
