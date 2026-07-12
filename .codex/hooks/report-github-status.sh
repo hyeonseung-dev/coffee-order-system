@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-# 기본 모드는 dry-run이다. --publish는 Human 승인 후에만 사용한다.
-# 현재는 기존 댓글 검색/수정을 하지 않으므로 반복 publish 시 중복 댓글이 생길 수 있다.
+# 이 스크립트는 GitHub 상태 댓글의 dry-run만 담당한다.
+# 실제 GitHub 쓰기는 연결 도구를 사용한다.
 
 target=""
 number=""
@@ -15,7 +15,6 @@ verification_log="logs/verification-log.md"
 changed_files="로그 참조"
 unverified="로그 참조"
 human_action="최종 결과 확인"
-publish=0
 repo_root=""
 
 usage() {
@@ -28,10 +27,8 @@ usage() {
   printf '%s\n' '  --changed-files <text>'
   printf '%s\n' '  --unverified <text>'
   printf '%s\n' '  --human-action <text>'
-  printf '%s\n' '  --publish                  Publish only with explicit Human approval'
   printf '%s\n' '  --help'
-  printf '\n%s\n' 'Without --publish, no GitHub write occurs.'
-  printf '%s\n' 'Repeated publish may create duplicate comments; deduplication is not implemented.'
+  printf '\n%s\n' 'This command never writes to GitHub.'
 }
 
 fail() {
@@ -143,10 +140,6 @@ while [ "$#" -gt 0 ]; do
       human_action=$2
       shift 2
       ;;
-    --publish)
-      publish=1
-      shift
-      ;;
     --help|-h)
       usage
       exit 0
@@ -198,45 +191,9 @@ fi
 validate_relative_file "$log_path" '--log-path'
 validate_relative_file "$verification_log" '--verification-log'
 
-if [ "$publish" -eq 0 ]; then
-  printf '%s\n\n' 'DRY RUN: GitHub comment was not published'
-  printf 'Target: %s\n' "$target"
-  printf 'Number: #%s\n' "$number"
-  printf 'Status: %s\n' "$status"
-  printf 'Attempt: %s/2\n\n' "$attempt"
-  render_body
-  exit 0
-fi
-
-# --publish는 Human이 실제 게시를 승인한 경우에만 실행한다.
-if ! command -v gh >/dev/null 2>&1; then
-  fail 'gh CLI is required for --publish'
-fi
-
-if ! gh auth status >/dev/null 2>&1; then
-  fail 'gh authentication is required for --publish'
-fi
-
-if ! git -C "$repo_root" remote get-url origin >/dev/null 2>&1; then
-  fail 'GitHub remote origin is required for --publish'
-fi
-
-temporary_file=$(mktemp "${TMPDIR:-/tmp}/coffee-order-github-status.XXXXXX")
-trap 'rm -f "$temporary_file"' EXIT HUP INT TERM
-render_body > "$temporary_file"
-
-if [ "$target" = "issue" ]; then
-  if ! gh issue comment "$number" --body-file "$temporary_file"; then
-    fail 'GitHub issue comment failed'
-  fi
-else
-  if ! gh pr comment "$number" --body-file "$temporary_file"; then
-    fail 'GitHub pull request comment failed'
-  fi
-fi
-
-printf '%s\n\n' 'GITHUB STATUS PUBLISHED'
+printf '%s\n\n' 'DRY RUN: GitHub comment was not published'
 printf 'Target: %s\n' "$target"
 printf 'Number: #%s\n' "$number"
 printf 'Status: %s\n' "$status"
-printf 'Attempt: %s/2\n' "$attempt"
+printf 'Attempt: %s/2\n\n' "$attempt"
+render_body
