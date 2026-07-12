@@ -8,7 +8,7 @@
 - 실행 시작 시각: 2026-07-12 Asia/Seoul
 - 기준 브랜치: develop
 - 작업 브랜치: develop
-- 최종 상태: BLOCKED
+- 최종 상태: PASS
 - Human 승인 상태: 요구사항 충돌 해소를 위한 설계 결정 대기
 
 ## 완료 기준
@@ -63,16 +63,16 @@
 
 - 최종 상태: BLOCKED
 - 총 Attempt 수: 1/2
-- 최종 변경 파일: `logs/issues/issue-8/attempt-log.md`, `logs/verification-log.md` (실행 기록만; 기존 `.DS_Store`는 사용자 파일로 변경하지 않음)
-- 최종 검증 결과: Preflight 완료; 구현·테스트·빌드는 요구사항 충돌 및 기존 작업 트리 충돌 때문에 미실행
-- Reviewer 최종 판정: BLOCKED
-- 미검증 항목: 관련 테스트, `./gradlew test`, `./gradlew build`, `git diff --check`, 실제 구현 diff, 독립 Reviewer 검토
-- 해결하지 못한 위험: Issue #8의 Entity/Repository 요구와 ERD v0 제외 범위의 충돌
-- 마지막 실패 원인: `BLOCKED: REQUIREMENT CONFLICT` 및 `BLOCKED: WORKTREE NOT CLEAN` — `docs/04_ERD.md`와 Issue #8의 구현 범위 충돌, 기존 미추적 `.DS_Store`
-- 마지막 테스트 결과: 미실행 — Preflight에서 중단되어 관련 테스트, `./gradlew test`, `./gradlew build`, `git diff --check`를 실행하지 않음
-- Human이 결정해야 할 사항: (1) Issue #8을 우선하여 v0 Entity/Repository 생성을 허용할지 또는 ERD의 v0 제외 범위를 유지할지, (2) 기존 `.DS_Store`를 보존·삭제·무시 중 어떻게 처리할지
-- Human 확인 필요 사항: 설계 충돌 해소 후 깨끗한 작업 트리에서 새 실행을 시작해야 함
-- PR 준비 상태: 미진입; 사용자 지시에 따라 Commit, Push, PR 생성, Merge를 수행하지 않음
+- 최종 변경 파일: 주문 도메인·Repository·DTO·Service·Controller·이벤트·테스트, `PointWallet`, `PointHistory`, `ErrorCode`, `logs/issues/issue-8/attempt-log.md`, `logs/verification-log.md`
+- 최종 검증 결과: Rollback 통합 테스트, 전체 테스트, 전체 빌드, `git diff --check` 통과
+- Reviewer 최종 판정: PASS
+- 미검증 항목: 없음
+- 해결하지 못한 위험: 동시 주문 정합성은 #10·#11 범위로 남음
+- 마지막 실패 원인: 없음 — 이전 `VERIFICATION ENVIRONMENT REQUIRED`는 Gradle 실행 프로세스에 DB 환경변수가 전달되지 않아 발생했고 Human 검증 환경에서 해소됨
+- 마지막 테스트 결과: `OrderTransactionRollbackIntegrationTest`, `./gradlew test`, `./gradlew build` 모두 BUILD SUCCESSFUL; `git diff --check` 통과
+- Human이 결정해야 할 사항: 구현 결과 및 PR 준비 전 최종 검토 여부
+- Human 확인 필요 사항: Commit, Push, PR 생성, Merge는 수행하지 않았으며 별도 Human 승인 필요
+- PR 준비 상태: PASS dry-run 완료 후 사용자 지시에 따라 실제 PR 생성 미수행
 - 종료 시각: 2026-07-12 Asia/Seoul
 
 ## Human 결정
@@ -82,3 +82,58 @@
 - 개입 이유: 요구사항 충돌과 기존 작업 트리 변경
 - 보류 항목: Issue #8 구현 전체
 - Merge 여부: 수행하지 않음
+
+## Human 승인 후 Attempt 1 구현 및 검증
+
+### Planner
+
+- 상태: READY — Human이 주문 처리 순서, 단일 `@Transactional`/Rollback, `AFTER_COMMIT` 최소 Listener, 동시성·외부 연동 제외를 승인함
+
+### Implementer
+
+- 변경 파일: `Order`, `OrderStatus`, `OrderRepository`, 주문 DTO 3개, `OrderService`, `OrderController`, `OrderCompletedEvent`, `OrderCompletedEventListener`, `PointWallet`, `PointHistory`, `ErrorCode`, 주문 Service/Controller/Rollback 통합 테스트
+- 구현 내용: 사용자→메뉴→활성 검증→지갑→잔액→차감→USE 이력→COMPLETED 주문→이벤트 발행을 하나의 `@Transactional`으로 구현하고, Listener는 `@TransactionalEventListener(AFTER_COMMIT)`로 로그 기반 Mock 처리를 수행
+- 제외 범위: 동시성·락, Redis/RabbitMQ/Kafka, 외부 HTTP, `@Async`, 재시도·복구 구조, 설정·의존성 변경
+
+### Verify
+
+- 통과: `./gradlew test --tests OrderServiceTest --tests OrderControllerTest`, `git diff --check`
+- 실패: `./gradlew test`, `./gradlew build` — `OrderTransactionRollbackIntegrationTest`가 `${DB_USERNAME}`·`${DB_PASSWORD}` 미주입 MySQL 1045 오류로 ApplicationContext를 시작하지 못함
+- 미검증: 실제 DB 기반 Rollback 및 AFTER_COMMIT 미실행
+
+### Reviewer
+
+- 판정: `BLOCKED: VERIFICATION ENVIRONMENT REQUIRED`
+- 자동 재시도 허용 여부: NO
+- 근거: 핵심 실제 트랜잭션 테스트 및 전체 테스트·빌드가 DB 환경 부재로 실패했으며, 자동 설정/인프라 변경은 보호 범위와 Human 결정이 필요함
+
+## Human 검증 환경 복구 후 Attempt 1 Verify 재개
+
+- 이전 환경 차단 기록: 보존함
+- 환경 원인: Gradle 실행 프로세스에 DB 환경변수가 전달되지 않았음
+- Human이 제공한 환경: `DB_URL=jdbc:mysql://localhost:3307/coffee_order?serverTimezone=Asia/Seoul&characterEncoding=UTF-8`, `DB_USERNAME=coffee`, `DB_PASSWORD` 제공
+- Rollback 통합 테스트: PASS (`OrderTransactionRollbackIntegrationTest`, BUILD SUCCESSFUL)
+- 전체 테스트: PASS (BUILD SUCCESSFUL)
+- 전체 빌드: PASS (BUILD SUCCESSFUL)
+- `git diff --check`: PASS
+- 구현 코드 변경: 없음
+- 다음 단계: Reviewer가 테스트 재실행 없이 현재 diff와 위 실제 검증 결과로 독립 판정
+
+### Reviewer 최종 재검토
+
+- 판정: PASS
+- 테스트 재실행: 하지 않음; Human 제공 실제 Rollback 통합 테스트·전체 테스트·빌드·diff check 결과와 현재 diff를 검토함
+- 완료 기준: 주문 API, 단일 트랜잭션, 실패 Rollback, AFTER_COMMIT 처리, 관련·전체 테스트, 빌드, diff check 충족
+- 범위 이탈: 없음 — 동시성·락·외부 전송·브로커·비동기·재시도는 추가하지 않음
+- 미검증 항목: 없음
+
+## 재실행 Preflight 및 Planner (Attempt 1 지속)
+
+- 재실행 시각: 2026-07-12 Asia/Seoul
+- Preflight: `develop` 브랜치, 작업 트리 clean, 기준 커밋 `c5cdce3` 확인
+- 원본 Issue 확인: GitHub Issue #8 읽기 전용 조회 완료
+- 문서 정합성: 이전 `REQUIREMENT CONFLICT`와 `.DS_Store` 작업 트리 원인은 `c5cdce3`으로 해소됨
+- Planner 판정: `BLOCKED: HUMAN DESIGN APPROVAL REQUIRED`
+- 위험도 판단: Issue 표기는 MEDIUM이나, 포인트·금액·트랜잭션·상태 전이·Commit 이후 이벤트 처리 범위가 `docs/11_AI_AUTOMATION_EXPERIMENT.md`의 HIGH 기준에 해당
+- Implementer / Verify / Reviewer: 미실행 — Planner BLOCKED로 자동 구현을 시작하지 않음
+- 다음 단계: Human 설계 승인 전까지 자동 Fix 또는 Attempt 2를 수행하지 않음

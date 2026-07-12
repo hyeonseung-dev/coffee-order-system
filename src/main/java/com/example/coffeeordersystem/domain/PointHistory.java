@@ -71,6 +71,18 @@ public class PointHistory {
 		return new PointHistory(user, amount, PointHistoryType.CHARGE, balanceAfter);
 	}
 
+	/**
+	 * 주문 결제에 따른 포인트 사용 이력을 생성한다.
+	 *
+	 * @param user 포인트를 사용한 사용자
+	 * @param amount 사용 금액
+	 * @param balanceAfter 사용 후 잔액
+	 * @return USE 타입의 포인트 이력 Entity
+	 */
+	public static PointHistory use(User user, long amount, long balanceAfter) {
+		return new PointHistory(user, amount, PointHistoryType.USE, balanceAfter);
+	}
+
 	@PrePersist
 	void prePersist() {
 		// 이력은 생성 후 수정하지 않으므로 생성 시각만 저장한다.

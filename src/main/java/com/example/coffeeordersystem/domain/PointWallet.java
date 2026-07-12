@@ -80,6 +80,22 @@ public class PointWallet {
 		this.balance += amount;
 	}
 
+	/**
+	 * 주문 결제 금액만큼 포인트를 차감한다.
+	 *
+	 * 잔액보다 큰 금액은 차감하지 않아 음수 잔액을 방지한다. 주문 Service의
+	 * 트랜잭션 안에서 사용되어 이력 및 주문 저장 실패 시 함께 롤백된다.
+	 *
+	 * @param amount 차감할 포인트 금액
+	 * @throws BusinessException 잔액이 부족한 경우
+	 */
+	public void debit(long amount) {
+		if (balance < amount) {
+			throw new BusinessException(ErrorCode.INSUFFICIENT_POINT);
+		}
+		this.balance -= amount;
+	}
+
 	private void validateChargeAmount(long amount) {
 		if (amount <= 0) {
 			throw new BusinessException(ErrorCode.INVALID_CHARGE_AMOUNT);
