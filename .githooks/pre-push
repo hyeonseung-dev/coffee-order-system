@@ -2,22 +2,13 @@
 
 set -euo pipefail
 
-# 로컬 pre-push Hook은 실제 품질·저장소 보호 문제만 차단한다.
-# 하네스 메타데이터와 로그 형식 누락은 경고만 출력하며 Push를 막지 않는다.
-
-issue=${HARNESS_ISSUE:-}
-attempt=${HARNESS_ATTEMPT:-}
-status=${HARNESS_STATUS:-}
-repo_root=""
-branch=""
+# 최소 로컬 보호 장치다.
+# 보호 브랜치 직접 Push와 핵심 워크플로우 파일 유실만 차단한다.
+# 테스트·빌드·리뷰 수준은 Draft PR의 GitHub Actions와 Human 리뷰에서 확인한다.
 
 block() {
-  printf '%s\n' "$1" >&2
+  printf 'PUSH BLOCKED: %s\n' "$1" >&2
   exit 1
-}
-
-warn() {
-  printf 'PUSH WARNING: %s\n' "$1" >&2
 }
 
 if ! repo_root=$(git rev-parse --show-toplevel 2>/dev/null); then
@@ -40,63 +31,24 @@ esac
 
 required_files=(
   "AGENTS.md"
+  "docs/05_AI_WORKFLOW.md"
+  "docs/06_CODEX_RULES.md"
+  "docs/12_EVIDENCE_GUIDE.md"
   ".codex/skills/coffee-order-issue-loop/SKILL.md"
-  ".codex/agents/planner.md"
-  ".codex/agents/implementer.md"
-  ".codex/agents/reviewer.md"
-  ".codex/hooks/require-log.sh"
-  ".codex/hooks/report-github-status.sh"
+  ".github/ISSUE_TEMPLATE/feature.md"
+  ".github/PULL_REQUEST_TEMPLATE.md"
+  ".github/CODE_REVIEW_TEMPLATE.md"
   ".githooks/pre-push"
-  "logs/README.md"
-  "logs/attempt-log-template.md"
-  "logs/verification-log.md"
 )
 
 for file in "${required_files[@]}"; do
   if [ ! -f "$repo_root/$file" ]; then
-    block "required harness file not found: $file"
+    block "required workflow file not found: $file"
   fi
 done
 
-bash -n "$repo_root/.codex/hooks/require-log.sh"
-bash -n "$repo_root/.codex/hooks/report-github-status.sh"
 bash -n "$repo_root/.githooks/pre-push"
-
-if ! printf '%s' "$issue" | grep -Eq '^[1-9][0-9]*$'; then
-  warn 'HARNESS_ISSUE is missing or invalid; Issue linkage will be checked in the PR body'
-fi
-
-case "$attempt" in
-  "") warn 'HARNESS_ATTEMPT is not set' ;;
-  1|2) ;;
-  *) warn 'HARNESS_ATTEMPT should be 1 or 2' ;;
-esac
-
-case "$status" in
-  "") warn 'HARNESS_STATUS is not set' ;;
-  PASS|FAIL|BLOCKED) ;;
-  *) warn 'HARNESS_STATUS should be PASS, FAIL, or BLOCKED' ;;
-esac
-
-if printf '%s' "$issue" | grep -Eq '^[1-9][0-9]*$' \
-  && printf '%s' "$attempt" | grep -Eq '^[12]$' \
-  && printf '%s' "$status" | grep -Eq '^(PASS|FAIL|BLOCKED)$'; then
-  set +e
-  bash "$repo_root/.codex/hooks/require-log.sh" \
-    --issue "$issue" \
-    --attempt "$attempt" \
-    --status "$status"
-  enforcement_rc=$?
-  set -e
-
-  if [ "$enforcement_rc" -ne 0 ]; then
-    warn 'harness log evidence is incomplete; Push continues, but the record should be corrected before review'
-  fi
-else
-  warn 'harness log evidence check skipped because metadata is incomplete'
-fi
 
 printf '%s\n' 'PUSH CHECK PASSED'
 printf 'Branch: %s\n' "$branch"
-printf '%s\n' 'Blocking checks: protected branch, required files, Bash syntax'
-exit 0
+printf '%s\n' 'Blocking checks: protected branch, minimum workflow files, Hook syntax'
