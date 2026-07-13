@@ -272,11 +272,11 @@
 
 ### Endpoint
 
-`/api/menus/popular`
+`/api/menus/popular?days=7&limit=3`
 
 ### Description
 
-조회 기준 시각으로부터 최근 7일간의 성공 주문을 메뉴별로 집계하여 주문 횟수가 많은 메뉴를 최대 3개 조회한다.
+최근 7일간 성공 주문을 기준으로 인기 메뉴 TOP 3를 조회한다.
 
 ### Path Variable
 
@@ -284,9 +284,10 @@
 
 ### Query Parameter
 
-없음
-
-> 과제 요구사항이 최근 7일과 TOP 3로 고정되어 있으므로 v0에서는 `days`, `limit`을 외부 파라미터로 노출하지 않는다.
+| 이름 | 타입 | 필수 여부 | 기본값 | 설명 |
+| --- | --- | --- | --- | --- |
+| `days` | Integer | 선택 | 7 | 집계 기간 |
+| `limit` | Integer | 선택 | 3 | 조회할 메뉴 개수 |
 
 ### Request Body
 
@@ -318,53 +319,32 @@
 
 ### Error Response
 
-현재 단계에서 별도 비즈니스 예외는 정의하지 않는다. 집계 대상 주문이 없으면 `data`에 빈 목록을 반환한다.
+현재 단계에서 별도 비즈니스 예외는 정의하지 않는다.
 
 ### 비즈니스 규칙
 
-- 조회 요청마다 기준 시각을 한 번만 계산한다.
-- 조회 범위는 `기준 시각 - 7일` 이상, 기준 시각 이하로 한다.
-- 정확히 7일 전 생성된 주문은 집계에 포함한다.
-- `OrderStatus.COMPLETED`인 주문만 집계한다.
-- 현재 구조에서는 실패 주문이 `orders`에 저장되지 않지만, 조회 조건에도 완료 상태를 명시한다.
-- `orders` 테이블을 정확한 원본 데이터로 사용한다.
-- 메뉴별 주문 횟수를 집계한다.
-- 주문 횟수 내림차순으로 정렬한다.
-- 주문 횟수가 같으면 `menuId` 오름차순으로 정렬한다.
-- 정렬 결과에서 최대 3개만 반환한다.
-- `orderCount`의 응답 타입은 `Long`으로 한다.
-- Redis는 v2에서 조회 결과 캐시로만 사용한다.
+- 최근 7일간 성공 주문만 집계한다.
+- `orders` 테이블을 원본 데이터로 사용한다.
+- 메뉴별 주문 횟수가 정확해야 한다.
+- Redis는 v2에서 캐시로만 사용한다.
 - Redis를 원본 랭킹 저장소로 사용하지 않는다.
+- 주문 실패 건은 `orders`에 저장되지 않으므로 집계 대상에서 제외된다.
 
-### 구현 방향
+### 기본 SQL
 
-- 애플리케이션에서 조회 기준 시각을 계산하고 조회 시작·종료 시각을 Repository에 전달한다.
-- 테스트 가능한 시간 계산을 위해 `Clock` 주입을 허용한다.
-- JPQL 집계 쿼리와 Projection을 사용한다.
-- 조회 개수 제한은 `Pageable`을 이용해 3개로 고정한다.
-- Native Query와 QueryDSL은 이번 범위에서 사용하지 않는다.
-
-### 기본 JPQL 형태
-
-```text
-SELECT m.id, m.name, COUNT(o.id)
-FROM Order o
-JOIN o.menu m
-WHERE o.status = COMPLETED
-  AND o.orderedAt >= :fromInclusive
-  AND o.orderedAt <= :toInclusive
-GROUP BY m.id, m.name
-ORDER BY COUNT(o.id) DESC, m.id ASC
+```sql
+SELECT menu_id, COUNT(*) AS order_count
+FROM orders
+WHERE ordered_at >= NOW() - INTERVAL 7 DAY
+GROUP BY menu_id
+ORDER BY order_count DESC
+LIMIT 3;
 ```
 
 ### 검증 포인트
 
-- 최근 7일 범위의 완료 주문만 집계되는지 확인한다.
-- 정확히 7일 전 주문이 포함되는지 확인한다.
-- 7일보다 오래된 주문은 제외되는지 확인한다.
-- 기준 시각 이후 주문은 제외되는지 확인한다.
+- 최근 7일 범위의 주문만 집계되는지 확인한다.
+- 성공 주문만 집계되는지 확인한다.
 - 메뉴별 주문 횟수가 정확한지 확인한다.
-- 상위 3개만 반환되는지 확인한다.
-- 주문 횟수가 같을 때 `menuId` 오름차순으로 반환되는지 확인한다.
-- 집계 대상 주문이 없을 때 빈 목록을 반환하는지 확인한다.
+- 동일 주문이 중복 집계되지 않는지 확인한다.
 - Redis 캐시 적용 후에도 원본 집계 기준은 MySQL `orders`인지 확인한다.
