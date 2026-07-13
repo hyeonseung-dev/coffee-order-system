@@ -31,7 +31,9 @@ AI가 현재 문서와 코드를 근거로 상세 Draft Issue를 만든다.
 AI가 한 번 재검증하고 Human과 대화로 쟁점을 협의한다.
 AI가 최종 합의 Issue를 정리하고 Human이 READY를 승인한다.
 Codex는 승인된 Issue를 구현·검증하고 Draft PR을 만든다.
-위험도에 맞는 리뷰와 최신 CI를 통과한 뒤 Human만 Merge한다.
+위험도에 맞는 리뷰와 최신 CI를 수행한다.
+담당자가 실제 Diff를 설명하고 AI가 코드와 대조한다.
+이해도 검증을 통과한 뒤 Human만 Merge한다.
 ```
 
 테스트 통과와 실제 문제 해결 검증을 구분하며, 실행하지 않은 결과를 성공으로 기록하지 않는다.
@@ -64,6 +66,7 @@ Codex는 승인된 Issue를 구현·검증하고 Draft PR을 만든다.
 - [12. Evidence Guide](docs/12_EVIDENCE_GUIDE.md)
 - [13. AI Workflow Evolution](docs/13_AI_WORKFLOW_EVOLUTION.md)
 - [Feature Refinement Issue Template](.github/ISSUE_TEMPLATE/feature-refinement.md)
+- [Pull Request & Understanding Gate Template](.github/PULL_REQUEST_TEMPLATE.md)
 - [ADR Guide](docs/adr/README.md)
 - [ADR Template](docs/adr/ADR_TEMPLATE.md)
 - [Harness Logs](logs/README.md)
