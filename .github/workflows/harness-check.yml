@@ -21,7 +21,6 @@ concurrency:
 
 jobs:
   harness-check:
-    if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -36,41 +35,39 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Warn about optional harness metadata
+      - name: Report PR mode and optional metadata
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
         shell: bash
         run: |
           set -u
+
+          printf 'Draft PR: %s\n' "$PR_DRAFT"
+          printf '%s\n' 'CI runs on Draft PRs so implementation feedback is available before Ready for Review.'
 
           if ! printf '%s\n' "$PR_BODY" | grep -Eq 'Closes[[:space:]]+#[1-9][0-9]*'; then
             printf '%s\n' 'HARNESS WARNING: PR body does not contain "Closes #<issue>"' >&2
           fi
 
-          for field in 'Linked Issue' 'Harness Attempt' 'Harness Status'; do
-            if ! printf '%s\n' "$PR_BODY" | grep -Eq "^[[:space:]]*[-*]?[[:space:]]*${field}[[:space:]]*:"; then
-              printf 'HARNESS WARNING: optional PR field is missing: %s\n' "$field" >&2
-            fi
-          done
+          if ! printf '%s\n' "$PR_BODY" | grep -Eq '위험도:[[:space:]]*`?(LOW|MEDIUM|HIGH)'; then
+            printf '%s\n' 'HARNESS WARNING: PR risk level is missing or unclear' >&2
+          fi
 
-          printf '%s\n' 'Harness metadata is advisory and does not determine CI success.'
-
-      - name: Check required harness files
+      - name: Check minimum workflow files
         shell: bash
         run: |
           set -euo pipefail
 
           required_files='AGENTS.md
+          docs/05_AI_WORKFLOW.md
+          docs/06_CODEX_RULES.md
+          docs/12_EVIDENCE_GUIDE.md
           .codex/skills/coffee-order-issue-loop/SKILL.md
-          .codex/agents/planner.md
-          .codex/agents/implementer.md
-          .codex/agents/reviewer.md
-          .codex/hooks/require-log.sh
-          .codex/hooks/report-github-status.sh
-          .githooks/pre-push
-          logs/README.md
-          logs/attempt-log-template.md
-          logs/verification-log.md'
+          .github/ISSUE_TEMPLATE/feature.md
+          .github/PULL_REQUEST_TEMPLATE.md
+          .github/CODE_REVIEW_TEMPLATE.md
+          .githooks/pre-push'
 
           missing=0
           while IFS= read -r file; do
@@ -87,24 +84,14 @@ jobs:
             exit 1
           fi
 
-      - name: Check Bash syntax
+      - name: Check minimal Hook syntax and permission
         shell: bash
         run: |
           set -euo pipefail
-          bash -n .codex/hooks/require-log.sh
-          bash -n .codex/hooks/report-github-status.sh
+
           bash -n .githooks/pre-push
 
-      - name: Check executable permissions
-        shell: bash
-        run: |
-          set -euo pipefail
-          for file in \
-            .codex/hooks/require-log.sh \
-            .codex/hooks/report-github-status.sh \
-            .githooks/pre-push \
-            gradlew
-          do
+          for file in .githooks/pre-push gradlew; do
             if [ ! -x "$file" ]; then
               printf 'HARNESS CHECK FAILED: executable permission required: %s\n' "$file" >&2
               exit 1
@@ -117,8 +104,8 @@ jobs:
       - name: Run Gradle build without repeating tests
         run: ./gradlew build -x test
 
-      - name: Report harness CI success
+      - name: Report CI success
         shell: bash
         run: |
           printf '%s\n' 'HARNESS CI PASSED'
-          printf '%s\n' 'Blocking checks: required files, Bash syntax, executable permissions, tests, build'
+          printf '%s\n' 'Blocking checks: minimum workflow files, minimal Hook syntax, executable permissions, tests, build'
