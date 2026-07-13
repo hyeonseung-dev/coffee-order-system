@@ -272,11 +272,11 @@
 
 ### Endpoint
 
-`/api/menus/popular?days=7&limit=3`
+`/api/menus/popular`
 
 ### Description
 
-최근 7일간 성공 주문을 기준으로 인기 메뉴 TOP 3를 조회한다.
+오늘을 제외한 직전 7개 완료 일자의 완료 주문을 기준으로 인기 메뉴 TOP 3를 조회한다.
 
 ### Path Variable
 
@@ -284,10 +284,7 @@
 
 ### Query Parameter
 
-| 이름 | 타입 | 필수 여부 | 기본값 | 설명 |
-| --- | --- | --- | --- | --- |
-| `days` | Integer | 선택 | 7 | 집계 기간 |
-| `limit` | Integer | 선택 | 3 | 조회할 메뉴 개수 |
+없음
 
 ### Request Body
 
@@ -323,28 +320,21 @@
 
 ### 비즈니스 규칙
 
-- 최근 7일간 성공 주문만 집계한다.
+- 집계 범위는 애플리케이션 기준 오늘의 7일 전 `00:00` 이상, 오늘 `00:00` 미만이다.
+- `COMPLETED` 주문만 집계한다.
+- `ACTIVE` 메뉴만 순위 후보에 포함한다.
+- 기간 내 주문이 없는 ACTIVE 메뉴도 `orderCount: 0`으로 후보에 포함한다.
+- 정렬은 `orderCount` 내림차순, 동률이면 `menuId` 오름차순이다.
+- ACTIVE 메뉴가 3개 미만이면 존재하는 메뉴만 반환하고, 없으면 빈 배열을 반환한다.
 - `orders` 테이블을 원본 데이터로 사용한다.
 - 메뉴별 주문 횟수가 정확해야 한다.
 - Redis는 v2에서 캐시로만 사용한다.
 - Redis를 원본 랭킹 저장소로 사용하지 않는다.
 - 주문 실패 건은 `orders`에 저장되지 않으므로 집계 대상에서 제외된다.
 
-### 기본 SQL
-
-```sql
-SELECT menu_id, COUNT(*) AS order_count
-FROM orders
-WHERE ordered_at >= NOW() - INTERVAL 7 DAY
-GROUP BY menu_id
-ORDER BY order_count DESC
-LIMIT 3;
-```
-
 ### 검증 포인트
 
-- 최근 7일 범위의 주문만 집계되는지 확인한다.
-- 성공 주문만 집계되는지 확인한다.
-- 메뉴별 주문 횟수가 정확한지 확인한다.
-- 동일 주문이 중복 집계되지 않는지 확인한다.
-- Redis 캐시 적용 후에도 원본 집계 기준은 MySQL `orders`인지 확인한다.
+- 시작 경계는 포함하고 종료 경계는 제외하는지 확인한다.
+- ACTIVE/INACTIVE 메뉴 정책, 주문 0건 메뉴, 전체 주문 0건을 확인한다.
+- 주문 수 정렬과 동률 시 메뉴 ID 정렬을 확인한다.
+- 응답의 `orderCount`가 Long 숫자로 반환되는지 확인한다.

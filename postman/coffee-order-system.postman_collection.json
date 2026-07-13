@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "3d55df20-6fb2-4f3b-b5b0-v0-implemented",
     "name": "Coffee Order System - v0 Implemented APIs",
-    "description": "Coffee Order System Postman collection. Includes implemented APIs only: GET /api/menus and POST /api/users/{userId}/points/charge.",
+    "description": "Coffee Order System Postman collection. Includes implemented menu, popular menu, and point charge APIs.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -68,6 +68,51 @@
                   "  const json = pm.response.json();",
                   "  if (json.data.length > 0) {",
                   "    pm.expect(Object.keys(json.data[0]).sort()).to.eql(['menuId', 'name', 'price'].sort());",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/menus/popular",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/menus/popular",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "menus",
+                "popular"
+              ]
+            },
+            "description": "오늘을 제외한 직전 7개 완료 일자의 ACTIVE 메뉴 인기 TOP 3를 조회한다."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('popular menu response exposes menuId, name, orderCount when present', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "  if (json.data.length > 0) {",
+                  "    pm.expect(Object.keys(json.data[0]).sort()).to.eql(['menuId', 'name', 'orderCount'].sort());",
                   "  }",
                   "});"
                 ]

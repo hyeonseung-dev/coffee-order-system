@@ -1,6 +1,7 @@
 package com.example.coffeeordersystem.controller;
 
 import com.example.coffeeordersystem.dto.MenuResponse;
+import com.example.coffeeordersystem.dto.PopularMenuResponse;
 import com.example.coffeeordersystem.service.MenuService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -62,5 +63,20 @@ class MenuControllerTest {
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.data").isArray())
 				.andExpect(jsonPath("$.data").isEmpty());
+	}
+
+	@Test
+	void 인기_메뉴_응답은_data에_menuId_name_orderCount를_포함한다() throws Exception {
+		when(menuService.findPopularMenus()).thenReturn(List.of(
+				new PopularMenuResponse(1L, "Americano", 5L)
+		));
+
+		mockMvc.perform(get("/api/menus/popular"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data").isArray())
+				.andExpect(jsonPath("$.data[0].menuId").value(1))
+				.andExpect(jsonPath("$.data[0].name").value("Americano"))
+				.andExpect(jsonPath("$.data[0].orderCount").value(5))
+				.andExpect(jsonPath("$.data[0].price").doesNotExist());
 	}
 }
