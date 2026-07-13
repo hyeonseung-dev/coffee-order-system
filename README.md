@@ -26,10 +26,10 @@
 ## AI-assisted 개발 원칙
 
 ```text
-AI가 전체 Draft Issue 초안을 만든다.
-담당자가 구현 전에 문제·규칙·흐름·검증 계획을 직접 작성한다.
-AI가 문서와 현재 코드 기준으로 재검증한다.
-Human이 READY와 위험도를 최종 승인한다.
+AI가 현재 문서와 코드를 근거로 상세 Draft Issue를 만든다.
+담당자가 자신의 흐름·대안·트레이드오프·누락 정책을 작성한다.
+AI가 한 번 재검증하고 Human과 대화로 쟁점을 협의한다.
+AI가 최종 합의 Issue를 정리하고 Human이 READY를 승인한다.
 Codex는 승인된 Issue를 구현·검증하고 Draft PR을 만든다.
 위험도에 맞는 리뷰와 최신 CI를 통과한 뒤 Human만 Merge한다.
 ```
@@ -62,6 +62,8 @@ Codex는 승인된 Issue를 구현·검증하고 Draft PR을 만든다.
 - [10. AI Review Log](docs/10_AI_REVIEW_LOG.md)
 - [11. AI Automation Experiment](docs/11_AI_AUTOMATION_EXPERIMENT.md)
 - [12. Evidence Guide](docs/12_EVIDENCE_GUIDE.md)
+- [13. AI Workflow Evolution](docs/13_AI_WORKFLOW_EVOLUTION.md)
+- [Feature Refinement Issue Template](.github/ISSUE_TEMPLATE/feature-refinement.md)
 - [ADR Guide](docs/adr/README.md)
 - [ADR Template](docs/adr/ADR_TEMPLATE.md)
 - [Harness Logs](logs/README.md)
