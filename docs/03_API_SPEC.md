@@ -347,14 +347,14 @@
 ### 기본 JPQL 형태
 
 ```text
-SELECT menu.id, menu.name, COUNT(order.id)
-FROM Order order
-JOIN order.menu menu
-WHERE order.status = COMPLETED
-  AND order.orderedAt >= :fromInclusive
-  AND order.orderedAt <= :toInclusive
-GROUP BY menu.id, menu.name
-ORDER BY COUNT(order.id) DESC, menu.id ASC
+SELECT m.id, m.name, COUNT(o.id)
+FROM Order o
+JOIN o.menu m
+WHERE o.status = COMPLETED
+  AND o.orderedAt >= :fromInclusive
+  AND o.orderedAt <= :toInclusive
+GROUP BY m.id, m.name
+ORDER BY COUNT(o.id) DESC, m.id ASC
 ```
 
 ### 검증 포인트
