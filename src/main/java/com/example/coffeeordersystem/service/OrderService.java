@@ -19,6 +19,9 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.LocalDateTime;
+
 /**
  * 메뉴 주문과 포인트 결제를 하나의 트랜잭션으로 처리하는 Service다.
  *
@@ -34,16 +37,18 @@ public class OrderService {
 	private final PointHistoryRepository pointHistoryRepository;
 	private final OrderRepository orderRepository;
 	private final ApplicationEventPublisher eventPublisher;
+	private final Clock clock;
 
 	public OrderService(UserRepository userRepository, MenuRepository menuRepository,
 			PointWalletRepository pointWalletRepository, PointHistoryRepository pointHistoryRepository,
-			OrderRepository orderRepository, ApplicationEventPublisher eventPublisher) {
+			OrderRepository orderRepository, ApplicationEventPublisher eventPublisher, Clock clock) {
 		this.userRepository = userRepository;
 		this.menuRepository = menuRepository;
 		this.pointWalletRepository = pointWalletRepository;
 		this.pointHistoryRepository = pointHistoryRepository;
 		this.orderRepository = orderRepository;
 		this.eventPublisher = eventPublisher;
+		this.clock = clock;
 	}
 
 	/**
@@ -72,7 +77,8 @@ public class OrderService {
 		wallet.debit(menu.getPrice());
 		pointHistoryRepository.save(PointHistory.use(user, menu.getPrice(), wallet.getBalance()));
 
-		Order savedOrder = orderRepository.save(Order.completed(user, menu, menu.getPrice()));
+		LocalDateTime orderedAt = LocalDateTime.now(clock);
+		Order savedOrder = orderRepository.save(Order.completed(user, menu, menu.getPrice(), orderedAt));
 		eventPublisher.publishEvent(new OrderCompletedEvent(
 				savedOrder.getId(), user.getId(), menu.getId(), savedOrder.getOrderPrice()));
 
