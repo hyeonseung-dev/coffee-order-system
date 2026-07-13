@@ -79,4 +79,14 @@ class MenuControllerTest {
 				.andExpect(jsonPath("$.data[0].orderCount").value(5))
 				.andExpect(jsonPath("$.data[0].price").doesNotExist());
 	}
+
+	@Test
+	void 인기_메뉴가_없으면_data에_빈_배열을_반환한다() throws Exception {
+		when(menuService.findPopularMenus()).thenReturn(List.of());
+
+		mockMvc.perform(get("/api/menus/popular"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data").isArray())
+				.andExpect(jsonPath("$.data").isEmpty());
+	}
 }

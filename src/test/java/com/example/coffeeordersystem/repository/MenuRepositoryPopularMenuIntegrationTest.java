@@ -2,7 +2,6 @@ package com.example.coffeeordersystem.repository;
 
 import com.example.coffeeordersystem.domain.Menu;
 import com.example.coffeeordersystem.domain.MenuStatus;
-import com.example.coffeeordersystem.domain.Order;
 import com.example.coffeeordersystem.domain.OrderStatus;
 import com.example.coffeeordersystem.domain.User;
 import org.junit.jupiter.api.AfterEach;
@@ -11,8 +10,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -25,15 +24,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 class MenuRepositoryPopularMenuIntegrationTest {
 
 	@Autowired private MenuRepository menuRepository;
-	@Autowired private OrderRepository orderRepository;
 	@Autowired private UserRepository userRepository;
+	@Autowired private JdbcTemplate jdbcTemplate;
 
 	private User user;
 	private Menu americano;
 	private Menu latte;
 	private Menu zeroOrder;
+	private Menu fourthMenu;
 	private Menu inactive;
-	private final List<Order> orders = new java.util.ArrayList<>();
 
 	@BeforeEach
 	void setUp() {
@@ -41,13 +40,14 @@ class MenuRepositoryPopularMenuIntegrationTest {
 		americano = menuRepository.save(Menu.create("popular-americano", 3000L, MenuStatus.ACTIVE));
 		latte = menuRepository.save(Menu.create("popular-latte", 4000L, MenuStatus.ACTIVE));
 		zeroOrder = menuRepository.save(Menu.create("popular-zero", 4500L, MenuStatus.ACTIVE));
+		fourthMenu = menuRepository.save(Menu.create("popular-fourth", 5000L, MenuStatus.ACTIVE));
 		inactive = menuRepository.save(Menu.create("popular-inactive", 5000L, MenuStatus.INACTIVE));
 	}
 
 	@AfterEach
 	void tearDown() {
-		orderRepository.deleteAll(orders);
-		menuRepository.deleteAll(List.of(americano, latte, zeroOrder, inactive));
+		jdbcTemplate.update("DELETE FROM orders WHERE user_id = ?", user.getId());
+		menuRepository.deleteAll(List.of(americano, latte, zeroOrder, fourthMenu, inactive));
 		userRepository.deleteById(user.getId());
 	}
 
@@ -87,9 +87,35 @@ class MenuRepositoryPopularMenuIntegrationTest {
 				.containsOnly(0L);
 	}
 
+	@Test
+	void ACTIVE_메뉴가_3개_미만이면_존재하는_메뉴만_반환한다() {
+		menuRepository.deleteAll(List.of(zeroOrder, fourthMenu));
+
+		List<PopularMenuProjection> result = findPopularMenus();
+
+		assertThat(result).extracting(PopularMenuProjection::getMenuId)
+				.containsExactly(americano.getId(), latte.getId());
+	}
+
+	@Test
+	void ACTIVE_메뉴가_없으면_빈_목록을_반환한다() {
+		menuRepository.deleteAll(List.of(americano, latte, zeroOrder, fourthMenu));
+
+		assertThat(findPopularMenus()).isEmpty();
+	}
+
+	private List<PopularMenuProjection> findPopularMenus() {
+		return menuRepository.findPopularMenus(
+				MenuStatus.ACTIVE, OrderStatus.COMPLETED,
+				LocalDateTime.of(2026, 7, 6, 0, 0),
+				LocalDateTime.of(2026, 7, 13, 0, 0),
+				PageRequest.of(0, 3));
+	}
+
 	private void orderAt(Menu menu, LocalDateTime orderedAt) {
-		Order order = orderRepository.save(Order.completed(user, menu, menu.getPrice()));
-		ReflectionTestUtils.setField(order, "orderedAt", orderedAt);
-		orders.add(orderRepository.saveAndFlush(order));
+		jdbcTemplate.update(
+				"INSERT INTO orders (user_id, menu_id, order_price, status, ordered_at) VALUES (?, ?, ?, ?, ?)",
+				user.getId(), menu.getId(), menu.getPrice(), OrderStatus.COMPLETED.name(), orderedAt
+		);
 	}
 }
