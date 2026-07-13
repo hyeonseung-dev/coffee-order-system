@@ -1,6 +1,6 @@
 ---
 name: coffee-order-issue-loop
-description: Human 착수 검토와 AI 재검증을 마친 READY GitHub Issue를 주 Codex가 Read, Plan, Implement, Verify, Review Diff, Fix, Re-verify, Report 순서로 처리하고 Draft PR까지 인계하는 저장소 전용 절차다.
+description: Human이 승인한 READY GitHub Issue를 Codex가 작업 브랜치 생성, 계약 추적, 구현, 검증, Diff 리뷰, 실제 Diff 기반 이해도 질문, Commit, Push, Draft PR까지 처리하는 저장소 전용 절차다.
 ---
 
 # Coffee Order Issue Loop
@@ -8,82 +8,117 @@ description: Human 착수 검토와 AI 재검증을 마친 READY GitHub Issue를
 ## 1. 목적
 
 - Human의 반복 지시 없이 승인된 `READY` Issue를 Draft PR까지 처리한다.
-- Codex는 코드, 테스트, 로컬 검증과 실제 diff 자체 리뷰에 집중한다.
-- 복잡한 멀티에이전트 구조를 기본값으로 사용하지 않는다.
-- 설계·정합성·보안·성능 재결정이 필요한 문제는 Human에게 반환한다.
-- PR을 ChatGPT와 Human으로의 공식 인계 지점으로 사용한다.
+- `READY`를 구현 시작 승인까지 완료된 작업 계약으로 사용한다.
+- Issue 최종 계약을 코드와 테스트 증거에 1:1로 연결한다.
+- 베이스 브랜치의 PR 템플릿을 축약하지 않고 그대로 사용한다.
+- Codex가 실제 Diff 기반 질문을 만들고 Human 답변을 실제 코드와 대조한다.
+- 설계·정합성·보안·성능 재결정이 필요한 문제만 Human에게 반환한다.
 - Merge는 어떤 경우에도 자동 수행하지 않는다.
 
-## 2. 필수 입력
+상세 계약 추적과 이해도 Gate는 `docs/14_CODEX_CONTRACT_TRACEABILITY_GATE.md`를 따른다.
+
+## 2. 필수 입력과 READY 의미
+
+필수 입력:
 
 - GitHub Issue 번호 또는 URL
 - Issue 상태 `READY`
 - 담당 Human 착수 검토
-- AI 재검증 결과와 Human 최종 결정
+- AI 재검증 결과와 Human 최종 합의
 - 작업 목적과 완료 조건
 - 핵심 도메인 규칙
 - 제외 범위
 - 수정 허용·금지 범위
 - 위험도 `LOW | MEDIUM | HIGH`
-- 테스트 계획
-- 직접 검증 방법과 성공 기준
-- 예상 트러블슈팅과 Human 공유 조건
+- 테스트·직접 검증 계획
 - 필요한 ADR과 승인 상태
 
-필수 입력이 부족하면 임의로 채우지 않는다.
+`READY`는 다음이 이미 끝났다는 뜻이다.
+
+- 담당자 착수 검토
+- AI 재검증과 Human 최종 합의
+- 위험도 확정
+- 테스트·검증 기준 확정
+- 필요한 ADR 승인
+- Human 구현 시작 승인
+
+따라서 `READY` Issue는 LOW·MEDIUM·HIGH 모두 작업 브랜치 생성이나 짧은 구현 계획을 이유로 추가 승인을 요청하지 않는다.
+
+필수 입력이 실제로 부족하거나 현재 코드와 충돌하면 임의로 채우지 않는다.
 
 - Human 착수 검토가 없으면 `BLOCKED: HUMAN PRE-REFINEMENT REQUIRED`
 - Issue 계약 정보가 부족하면 `BLOCKED: ISSUE REFINEMENT REQUIRED`
-- HIGH 작업의 설계·ADR·Human 승인이 부족하면 `BLOCKED: HIGH RISK APPROVAL REQUIRED`
+- HIGH 작업의 설계·ADR·Human 승인이 기록되지 않았으면 `BLOCKED: HIGH RISK APPROVAL REQUIRED`
 
-## 3. 위험도별 진입 규칙
+## 3. 권위 있는 계약 추출
+
+Issue 전체를 읽되 구현 기준은 다음 영역이다.
+
+1. Human·AI 최종 합의
+2. 최종 구현 계약
+3. 완료 조건
+4. 테스트·직접 검증 계획
+5. 포함·제외 범위
+6. 수정 허용·금지 범위
+7. 위험도와 승인 상태
+
+AI 최초 제안, Human 최초 이해, 재검증 기록은 배경이다. 최종 계약과 충돌하면 최종 계약을 따른다.
+
+권위 있는 영역끼리 충돌하거나 현재 코드상 이행할 수 없으면 구현하지 않고 Troubleshooting Gate로 전환한다.
+
+## 4. 위험도별 실행 규칙
 
 ### LOW
 
-- 기존 패턴을 따르는 명확한 작업이다.
-- 주 Codex가 짧은 계획을 작성하고 바로 구현할 수 있다.
-- 관련 테스트, 전체 CI, diff 리뷰는 생략하지 않는다.
+- 짧은 계획을 보고하고 바로 구현한다.
+- 관련 테스트, 전체 CI, Contract Traceability, Diff 리뷰를 생략하지 않는다.
+- 실제 Diff 기반 이해도 질문 3개를 작성한다.
 
 ### MEDIUM
 
-- 새로운 API, 서비스 로직, 조회 쿼리, 인덱스, 캐시, 이벤트처럼 설계 영향이 있다.
-- 주 Codex가 구현 범위, 예상 파일, 테스트, 영향 범위를 보고한다.
-- Human 확인 후 구현한다.
+- 구현 범위, 예상 파일, 테스트, 영향 범위를 짧게 보고한다.
+- `READY`라면 추가 Human 확인 없이 구현한다.
+- 정상·실패·경계 테스트와 Contract Traceability를 수행한다.
+- 실제 Diff 기반 이해도 질문 5개를 작성한다.
 - 독립 AI 리뷰는 필요 시 별도 단계에서 수행한다.
 
 ### HIGH
 
-- 인증·인가, 금액·포인트·재고, 상태 전이, 트랜잭션, 동시성, DB 구조처럼 데이터 손실·보안·운영 장애 가능성이 크다.
-- 구현 전 설계와 트레이드오프가 정리돼 있어야 한다.
-- 필요한 ADR이 Accepted 상태여야 한다.
-- Human의 명시적 구현 승인이 있어야 한다.
-- 구현 후 독립 AI 리뷰와 위험에 맞는 강화 테스트가 필요하다.
+- 구현 전 설계, 트레이드오프, 필요한 ADR, Human 승인이 Issue에 기록돼 있어야 한다.
+- `READY`이고 기록이 확인되면 추가 승인 없이 구현한다.
+- 위험에 맞는 권한·Rollback·동시성·정합성 테스트와 Contract Traceability를 수행한다.
+- 실제 Diff 기반 이해도 질문 5~8개를 작성한다.
+- 구현 후 독립 AI 리뷰가 필수다.
 
 최종 위험도와 리뷰 수준은 Human이 결정한다.
 
-## 4. 실행 절차
+## 5. 실행 절차
 
 ```text
-Read
+Read authoritative contract
+→ Minimal Preflight / Create Branch
+→ Build Contract Traceability Map
 → Plan
 → Implement
 → Verify
 → Review Diff
-→ Fix
-→ Re-verify
+→ Link Evidence
+→ Fix / Re-verify
+→ Verify PR Template Fidelity
+→ Generate Actual-Diff Questions
 → Report
 → Commit / Push / Draft PR
 ```
 
-### 4.1 Read
+### 5.1 Read
 
-다음을 확인한다.
+확인 항목:
 
 - Issue 상태가 `READY`인지
 - Human 착수 검토와 최종 결정이 기록됐는지
-- 해결하려는 문제와 핵심 도메인 규칙이 명확한지
+- 권위 있는 최종 계약 영역이 명확한지
 - 위험도와 리뷰 수준이 명확한지
-- 완료 조건이 테스트·검증 가능한지
+- 완료 조건이 검증 가능한지
 - 관련 ADR 상태가 올바른지
 - 수정 경계와 문서 영향이 명확한지
 
@@ -91,35 +126,61 @@ Read
 
 확인 우선순위:
 
-1. Issue의 Human 착수 검토와 최종 결정
-2. 관련 API·ERD·ADR
-3. 현재 구현 코드와 테스트
-4. 수정 허용·금지 범위
-5. `docs/12_EVIDENCE_GUIDE.md`
+1. Issue의 최종 합의와 최종 구현 계약
+2. 완료 조건과 테스트·직접 검증 계획
+3. 관련 API·ERD·ADR
+4. 현재 구현 코드와 테스트
+5. 수정 허용·금지 범위
+6. `docs/12_EVIDENCE_GUIDE.md`
+7. `docs/14_CODEX_CONTRACT_TRACEABILITY_GATE.md`
 
 DRAFT Issue는 구현하지 않는다.
 
-### 4.2 Minimal Preflight
+### 5.2 Minimal Preflight와 작업 브랜치
 
 ```bash
 git branch --show-current
-git status
+git status --short
 git log --oneline -5
 ```
 
-확인 항목:
+처리 규칙:
 
-- `main` 또는 `develop` 보호 브랜치가 아닌지
-- 기존 미커밋 변경과 충돌하지 않는지
-- Issue 범위에 맞는 작업 브랜치인지
-- 보호 파일 변경이 필요한지
-- 관련 테스트와 실행 환경이 있는지
+1. 현재 브랜치가 `main` 또는 `develop`이고 작업 트리가 깨끗하면 `codex/issue-{번호}-{간단한-slug}` 형식의 작업 브랜치를 자동 생성한다.
+2. 이미 대상 Issue 전용 브랜치라면 그대로 계속한다.
+3. 미커밋 변경이 있거나 다른 Issue 작업 브랜치와 충돌하면 덮어쓰지 않고 중단한다.
+4. 보호 브랜치에 직접 Commit하거나 Push하지 않는다.
+5. 작업 브랜치 생성은 Human 승인이나 Troubleshooting Gate 대상이 아니다.
 
-형식적인 메타데이터 누락만으로 중단하지 않는다. READY 계약의 핵심인 Human 검토, 완료 조건, 수정 경계가 없으면 중단한다.
+예시:
 
-### 4.3 Plan
+```bash
+git switch -c codex/issue-9-popular-menus
+```
 
-주 Codex가 다음만 짧게 정리한다.
+### 5.3 Contract Traceability Map
+
+구현 전에 최종 계약을 원자 항목으로 나눈다.
+
+| ID | 최종 계약 | 예상 구현 위치 | 필요한 증거 |
+|---|---|---|---|
+| C-01 | 구체적인 결과 또는 구현 제약 | 클래스·메서드·Query·설정 | 테스트·직접 검증·문서 |
+
+반드시 별도 항목으로 만드는 것:
+
+- API·요청·응답 계약
+- 도메인 상태와 데이터 원본
+- 기간·시간대·정렬·동률·빈 결과 정책
+- 트랜잭션·Rollback·권한·동시성 규칙
+- Human이 확정한 구현 방식
+- 도입 금지 기술과 제외 범위
+- 테스트·직접 검증 시나리오
+
+표를 장문으로 보고할 필요는 없지만 구현과 자체 리뷰에서 모든 행을 추적해야 한다.
+
+### 5.4 Plan
+
+다음만 짧게 보고한다.
 
 - 구현 범위
 - 수정 예상 파일
@@ -129,23 +190,24 @@ git log --oneline -5
 - 제외 범위
 - 문서 영향
 
-LOW는 계획 후 바로 진행할 수 있다. MEDIUM은 Human 확인 후 진행한다. HIGH는 Accepted ADR과 명시적 Human 승인까지 확인한다.
+모든 위험도에서 계획 보고 후 별도 승인을 기다리지 않는다. `READY`가 구현 승인이다.
 
-계획이 Human 결정이나 ADR과 충돌하면 구현하지 않는다.
+계획이 Human 최종 결정, API·ERD·ADR, 현재 코드와 충돌하면 Troubleshooting Gate로 전환한다.
 
-### 4.4 Implement
+### 5.5 Implement
 
 - Issue 범위 안에서 최소 변경
 - production 코드와 필요한 테스트 작성
 - 기존 API·DB·예외 계약 유지
-- Human이 정리한 핵심 도메인 규칙 반영
+- 최종 합의된 핵심 도메인 규칙 반영
 - 정상·실패·경계 흐름 구현
 - 필요한 Rollback·권한·동시성 흐름 고려
+- Human이 확정한 구현 방식 제약 준수
 - 불필요한 리팩터링과 새 기술 도입 금지
 
 Markdown 문서는 Issue에서 허용한 경우에만 수정한다.
 
-### 4.5 Debug 또는 Troubleshooting Gate
+### 5.6 Debug 또는 Troubleshooting Gate
 
 Issue 범위 안에서 자체 해결할 수 있는 문제:
 
@@ -167,7 +229,16 @@ Issue 범위 안에서 자체 해결할 수 있는 문제:
 - ADR과 구현 충돌
 - 임시 우회와 근본 해결 중 선택 필요
 - Issue 범위 밖 또는 보호 파일 변경 필요
-- Human 착수 검토의 가정과 실제 코드 구조 충돌
+- 권위 있는 최종 계약 영역끼리 충돌
+- 최종 계약과 현재 코드 구조 충돌
+- 미커밋 변경이나 다른 작업 브랜치 내용을 덮어쓸 위험
+
+다음은 Troubleshooting Gate가 아니다.
+
+- 깨끗한 보호 브랜치에서 Issue 전용 브랜치 생성
+- 짧은 구현 계획 보고
+- `READY` Issue 구현 시작
+- `gh` CLI 없이 표준 `git`으로 Commit·Push
 
 보고 형식:
 
@@ -180,9 +251,9 @@ Issue 범위 안에서 자체 해결할 수 있는 문제:
 - 가능한 선택지와 권장 방향
 - 필요한 Human 결정
 
-### 4.6 Verify
+### 5.7 Verify
 
-다음 순서로 검증한다.
+순서:
 
 1. 가장 작은 관련 테스트
 2. 필요한 통합·권한·Rollback·동시성·성능 테스트
@@ -192,7 +263,7 @@ Issue 범위 안에서 자체 해결할 수 있는 문제:
 6. `git status`, `git diff --stat`, `git diff`
 7. 필요한 API·DB·로그 직접 검증
 
-결과를 다음과 같이 구분한다.
+결과를 구분한다.
 
 - 테스트가 보장하는 것
 - 테스트가 보장하지 않는 것
@@ -200,64 +271,139 @@ Issue 범위 안에서 자체 해결할 수 있는 문제:
 - Issue 완료 조건 충족 여부
 - 미검증 항목과 알려진 제한
 
-테스트 통과만으로 완료를 선언하지 않는다. Issue, 핵심 규칙, 실제 코드, 직접 검증 결과를 함께 대조한다.
+테스트 통과만으로 완료를 선언하지 않는다.
 
-### 4.7 Review Diff
+### 5.8 Review Diff와 Evidence Linking
 
-주 Codex가 실제 diff를 다시 읽는다.
+실제 Diff를 다시 읽고 다음을 확인한다.
 
-확인 항목:
-
-- Issue 완료 조건 충족
+- Issue 최종 계약 충족
 - 범위 이탈과 불필요한 리팩터링
 - API·ERD·ADR·예외 계약 불일치
 - 핵심 버그와 실패 흐름
 - 테스트 누락과 의미 없는 테스트
+- 구현 방식 제약 위반
 - 실행하지 않은 검증을 성공으로 기록했는지
 - 문서 보완 필요 여부
 
-자체 리뷰는 독립 AI 리뷰를 대신하지 않는다. MEDIUM은 필요 시, HIGH는 필수로 별도 독립 리뷰를 수행한다.
+Contract Traceability 표를 실제 증거로 갱신한다.
 
-### 4.8 Fix와 Re-verify
+| ID | 최종 계약 | 실제 코드 증거 | 테스트·직접 검증 증거 | 상태 |
+|---|---|---|---|---|
+| C-01 | 계약 | `path#symbol` | `TestClass#method` 또는 사유 | `PASS | HOLD | N/A` |
+
+판정 규칙:
+
+- 모든 계약에 실제 증거가 있어야 한다.
+- `N/A`는 이유가 있어야 한다.
+- 구현 결과가 맞아도 합의한 구현 방식이 다르면 `HOLD`다.
+- 한 행이라도 `HOLD`면 Report·Commit·Draft PR 단계로 넘어가지 않는다.
+- 테스트 통과는 표 전체 PASS를 대신하지 않는다.
+
+자체 리뷰는 독립 AI 리뷰를 대신하지 않는다.
+
+### 5.9 Fix와 Re-verify
 
 Issue 범위 안에서 수정 가능한 문제는 고치고 관련 테스트부터 다시 실행한다.
 
 무제한 자동 수정 반복을 하지 않는다. 같은 실패가 반복되거나 설계 변경이 필요하면 Troubleshooting Gate로 전환한다.
 
-### 4.9 Report
+### 5.10 PR Template Fidelity와 질문 생성
 
-반드시 다음을 보고한다.
+Commit 전에 베이스 브랜치의 최신 `.github/PULL_REQUEST_TEMPLATE.md`를 다시 읽는다.
+
+필수 규칙:
+
+1. 모든 `##`·`###` 제목을 보존한다.
+2. 빈 섹션을 요약 문장으로 대체하거나 삭제하지 않는다.
+3. Contract Traceability 표를 실제 증거로 채운다.
+4. Codex가 직접 완료한 항목만 체크한다.
+5. Human 리뷰, ChatGPT 리뷰, 독립 리뷰, CI, 이해도 검증은 실제 완료 전에 체크하지 않는다.
+6. 실제 Diff 기반 이해도 질문을 작성한다.
+7. 질문마다 실제 파일·클래스·메서드·Query·설정·테스트를 포함한다.
+8. Human 답변은 비워 둔다.
+
+질문 수:
+
+- LOW: 3개
+- MEDIUM: 5개
+- HIGH: 5~8개
+
+질문 관점:
+
+- 해결한 문제와 요청→응답 흐름
+- 핵심 규칙의 구현 위치와 계층 선택 이유
+- 정상·실패 시 데이터 상태와 트랜잭션·Rollback
+- 위험한 경계·동시성·권한·시간·캐시 조건
+- 테스트 보장 범위와 미검증 범위
+- 대안과 트레이드오프
+- 운영 잔여 위험
+
+고정된 일반 질문을 그대로 복사하지 않는다.
+
+### 5.11 Report
+
+반드시 보고한다.
 
 - 구현 내용과 주요 변경 파일
 - 실제 실행한 명령과 결과
+- Contract Traceability 전체 PASS 여부
 - 테스트가 보장하는 것과 보장하지 않는 것
 - 직접 검증 결과
 - 실제 발생한 의미 있는 트러블슈팅
 - 미검증 항목과 알려진 제한
-- Human이 설명해야 할 핵심 흐름
+- 실제 Diff 기반 질문 생성 여부
 - 독립 리뷰 필요 여부
 - 문서 보완 필요 항목
 
-모든 Issue에 별도 장문 로그를 강제하지 않는다. 일반적인 근거는 Issue와 PR에 남기고, 의미 있는 트러블슈팅만 별도 기록한다.
+모든 Issue에 장문 로그를 강제하지 않는다. 일반 근거는 Issue와 PR에 남기고 의미 있는 실패만 별도 기록한다.
 
-### 4.10 Commit·Push·Draft PR
+### 5.12 Commit·Push·Draft PR
 
-검증과 자체 diff 리뷰가 끝나면 다음을 수행한다.
+Contract Traceability 전 항목 PASS, 검증, 자체 Diff 리뷰, PR 템플릿 확인이 끝나면 수행한다.
 
-1. Issue 범위의 변경만 Commit한다.
-2. 작업 브랜치를 Push한다.
-3. Draft PR을 생성한다.
-4. PR 본문에 실제 검증 증거와 위험도를 기록한다.
-5. PR 번호를 Human에게 전달한다.
+1. Issue 범위의 변경만 Commit
+2. 작업 브랜치 Push
+3. Draft PR 생성
+4. 생성된 PR 본문 재확인
+5. PR 번호를 Human에게 전달
 
-Draft PR 이후에는 구현 결과 전체를 대화에 복사하지 않는다. Human은 PR 번호를 ChatGPT에 전달해 실제 diff와 Actions를 검토하게 한다.
+`gh` CLI 부재는 Commit·Push 중단 사유가 아니다.
+
+- Commit과 Push는 표준 `git` 명령을 사용한다.
+- Draft PR은 사용 가능한 GitHub 연동, API 또는 `gh`를 사용한다.
+- PR 생성 수단이 전혀 없으면 Push까지 완료하고 compare 정보, PR 제목, 템플릿 전체 본문을 제공하며 PR 생성 단계만 `BLOCKED`로 보고한다.
+
+PR 생성 후 확인:
+
+- 베이스와 Head가 올바른가
+- Draft인가
+- 템플릿 제목이 모두 남아 있는가
+- Contract Traceability 표가 채워졌는가
+- 실제 Diff 기반 질문이 있는가
+- Human·ChatGPT·CI 항목이 선행 체크되지 않았는가
 
 리뷰 수정은 같은 브랜치와 같은 PR에 반영한다.
 
-## 5. 리뷰와 Merge 경계
+## 6. Human 답변 검증
 
-- LOW: Codex 자체 diff 리뷰 + Human 리뷰 + CI
-- MEDIUM: Codex 자체 diff 리뷰 + 필요 시 독립 AI 리뷰 + Human 리뷰 + CI
+Human이 이해도 질문에 직접 답변한 뒤 Codex는 최신 Head의 Diff와 테스트를 다시 읽는다.
+
+문항별로 기록한다.
+
+- 결과: `PASS | HOLD`
+- 실제 코드와 일치하는 근거
+- 수정이 필요한 오해
+- 확인된 미검증·잔여 위험
+
+전체 결과가 `HOLD`면 Merge 조건을 충족하지 못한다.
+
+Codex는 Human 답변을 대신 작성하지 않으며 PASS를 Merge 권한으로 해석하지 않는다.
+
+## 7. 리뷰와 Merge 경계
+
+- LOW: Codex 자체 Diff 리뷰 + Human 리뷰 + CI
+- MEDIUM: Codex 자체 Diff 리뷰 + 필요 시 독립 리뷰 + Human/ChatGPT 리뷰 + CI
 - HIGH: 구현 전 설계 확인 + 독립 AI 리뷰 + 강화된 Human 리뷰 + 위험에 맞는 테스트 + CI
 
 ```text
@@ -270,5 +416,6 @@ Human만 Merge 가능
 - 자체 PASS는 Draft PR 생성 가능 상태이지 Merge 승인 상태가 아니다.
 - 최신 Commit 기준 CI가 성공해야 한다.
 - 문서 충돌과 범위 밖 변경이 없어야 한다.
-- 작성자가 코드와 테스트를 설명할 수 있어야 한다.
+- Contract Traceability가 전체 PASS여야 한다.
+- Human 이해도 답변이 실제 코드와 일치해야 한다.
 - 실제 Merge는 Human이 GitHub UI 또는 본인의 명령으로 직접 수행한다.
