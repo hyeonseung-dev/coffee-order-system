@@ -6,7 +6,7 @@
 
 주문 후속 처리를 주문 트랜잭션과 어떤 시점·스레드에서 분리할지 판단하기 위해, 직접 동기 호출부터 단계적으로 지연·예외·Rollback 영향을 확인한다.
 
-이번 기록은 Issue #28의 1단계만 다룬다. 2단계 동기 Event, 3단계 `AFTER_COMMIT`, 4단계 `AFTER_COMMIT + @Async`는 아직 구현하거나 측정하지 않았다.
+현재 1단계와 2단계까지 기록했다. 3단계 `AFTER_COMMIT`, 4단계 `AFTER_COMMIT + @Async`는 아직 구현하거나 측정하지 않았다.
 
 ## 공통 테스트 조건
 
@@ -65,5 +65,42 @@ git diff --check
 
 ### 체크포인트 Commit
 
-- Commit SHA: _미기록 — 이번 단계는 Commit을 수행하지 않음_
+- Commit SHA: `f00cacc` (`test: reproduce synchronous order follow-up coupling`)
 
+## 2단계: 일반 동기 Spring Event
+
+### 구현 흐름
+
+`OrderService.order()`는 포인트 차감, USE 이력 저장, 주문 저장 후 최소 주문 데이터만 담은 `OrderCompletedEvent`를 `ApplicationEventPublisher`로 발행한다. 일반 `@EventListener`인 `OrderCompletedEventListener`가 Event를 받아 `OrderDataPlatformClient`를 호출한다.
+
+`@TransactionalEventListener`, `AFTER_COMMIT`, `@Async`는 사용하지 않았다. 따라서 Event 발행, Listener, Client가 주문 트랜잭션 안에서 즉시 실행된다.
+
+### 실행 결과
+
+| 조건 | 요청 / 발행 / Listener / Client 스레드 | `order()` 측정 시간 | 주문·포인트·USE 이력 DB 결과 | 결과 |
+| --- | --- | ---: | --- | --- |
+| 정상 Event | `Test worker` / `Test worker` / `Test worker` / `Test worker` | 5ms | 주문 1건, 잔액 7,000, USE 이력 1건 | Listener·Client 각 1회 호출 후 Commit |
+| Listener 내부 Client 2초 지연 | `Test worker` / `Test worker` / `Test worker` / `Test worker` | 2,008ms | 주문 1건, 잔액 7,000, USE 이력 1건 | Commit. Client 지연만큼 주문 처리도 지연 |
+| Listener 내부 Client 예외 | `Test worker` / `Test worker` / `Test worker` / `Test worker` | 9ms | 주문 0건, 잔액 10,000, USE 이력 0건 | 예외 전파 및 Rollback |
+| 주문 저장 예외 | `Test worker` / Event 발행 전 실패 / Event 발행 전 실패 / 호출 전 실패 | 6ms | 주문 0건, 잔액 10,000, USE 이력 0건 | Event·Listener·Client 미호출, Rollback |
+
+### 1단계 대비
+
+- 해결됨: `OrderService`는 `OrderDataPlatformClient` 구현을 직접 의존하거나 호출하지 않는다. 외부 전송 책임은 `OrderCompletedEventListener`로 이동했다.
+- 남음: 네 실행 지점이 모두 같은 `Test worker` 스레드다. Client 지연은 주문 처리 시간을 2,008ms로 늘리고, Listener를 통해 전파된 Client 예외는 주문·포인트·USE 이력을 Rollback한다.
+
+### 실행한 테스트 명령
+
+```bash
+./gradlew test --tests 'com.example.coffeeordersystem.service.OrderSynchronousEventIntegrationTest' --tests 'com.example.coffeeordersystem.service.OrderServiceTest' --tests 'com.example.coffeeordersystem.service.OrderTransactionRollbackIntegrationTest'
+```
+
+### 테스트와 측정의 한계
+
+- 1단계와 마찬가지로 외부 플랫폼은 Mockito 기반 Stub이며 실제 HTTP 네트워크 조건은 검증하지 않는다.
+- 소요 시간은 `OrderService.order()` 호출 구간의 단일 테스트 실행값이며 성능 목표나 SLA가 아니다.
+- `AFTER_COMMIT`, 비동기 실행, 재시도·내구성·유실, 동시 요청은 아직 검증하지 않았다.
+
+### 체크포인트 Commit
+
+- Commit SHA: _미기록 — 2단계 변경은 Human 승인 전 Commit하지 않음_

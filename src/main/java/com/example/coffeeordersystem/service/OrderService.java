@@ -7,7 +7,7 @@ import com.example.coffeeordersystem.domain.PointHistory;
 import com.example.coffeeordersystem.domain.PointWallet;
 import com.example.coffeeordersystem.domain.User;
 import com.example.coffeeordersystem.dto.OrderResponse;
-import com.example.coffeeordersystem.external.OrderDataPlatformClient;
+import com.example.coffeeordersystem.event.OrderCompletedEvent;
 import com.example.coffeeordersystem.exception.BusinessException;
 import com.example.coffeeordersystem.exception.ErrorCode;
 import com.example.coffeeordersystem.repository.MenuRepository;
@@ -15,6 +15,7 @@ import com.example.coffeeordersystem.repository.OrderRepository;
 import com.example.coffeeordersystem.repository.PointHistoryRepository;
 import com.example.coffeeordersystem.repository.PointWalletRepository;
 import com.example.coffeeordersystem.repository.UserRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,26 +39,27 @@ public class OrderService {
 	private final PointWalletRepository pointWalletRepository;
 	private final PointHistoryRepository pointHistoryRepository;
 	private final OrderRepository orderRepository;
-	private final OrderDataPlatformClient orderDataPlatformClient;
+	private final ApplicationEventPublisher eventPublisher;
 	private final Clock clock;
 
 	public OrderService(UserRepository userRepository, MenuRepository menuRepository,
 			PointWalletRepository pointWalletRepository, PointHistoryRepository pointHistoryRepository,
-			OrderRepository orderRepository, OrderDataPlatformClient orderDataPlatformClient, Clock clock) {
+			OrderRepository orderRepository, ApplicationEventPublisher eventPublisher, Clock clock) {
 		this.userRepository = userRepository;
 		this.menuRepository = menuRepository;
 		this.pointWalletRepository = pointWalletRepository;
 		this.pointHistoryRepository = pointHistoryRepository;
 		this.orderRepository = orderRepository;
-		this.orderDataPlatformClient = orderDataPlatformClient;
+		this.eventPublisher = eventPublisher;
 		this.clock = clock;
 	}
 
 	/**
 	 * 사용자의 포인트로 활성 메뉴 한 개를 결제한다.
 	 *
-	 * 사용자 조회부터 외부 데이터 플랫폼 직접 호출까지 단일 트랜잭션으로 처리한다.
-	 * 따라서 외부 호출의 지연과 예외도 주문 응답과 Rollback에 직접 영향을 준다.
+	 * 사용자 조회부터 주문 완료 Event 발행까지 단일 트랜잭션으로 처리한다.
+	 * 일반 동기 Listener가 같은 호출 흐름에서 실행되므로 후속 처리의 지연과 예외도
+	 * 주문 응답과 Rollback에 직접 영향을 준다.
 	 *
 	 * @param userId 주문 사용자 ID
 	 * @param menuId 주문 메뉴 ID
@@ -81,9 +83,9 @@ public class OrderService {
 
 		Instant orderedAt = Instant.now(clock);
 		Order savedOrder = orderRepository.save(Order.completed(user, menu, menu.getPrice(), orderedAt));
-		orderDataPlatformClient.sendOrderCompleted(
+		eventPublisher.publishEvent(new OrderCompletedEvent(
 				savedOrder.getId(), user.getId(), menu.getId(), savedOrder.getOrderPrice(),
-				savedOrder.getOrderedAt(), BUSINESS_ZONE.getId());
+				savedOrder.getOrderedAt(), BUSINESS_ZONE.getId()));
 
 		return new OrderResponse(savedOrder.getId(), user.getId(), menu.getId(), savedOrder.getOrderPrice(),
 				wallet.getBalance(), LocalDateTime.ofInstant(savedOrder.getOrderedAt(), BUSINESS_ZONE));
