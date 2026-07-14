@@ -20,7 +20,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 /**
  * 메뉴 주문과 포인트 결제를 하나의 트랜잭션으로 처리하는 Service다.
@@ -30,6 +32,7 @@ import java.time.LocalDateTime;
  */
 @Service
 public class OrderService {
+	private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
 
 	private final UserRepository userRepository;
 	private final MenuRepository menuRepository;
@@ -77,12 +80,12 @@ public class OrderService {
 		wallet.debit(menu.getPrice());
 		pointHistoryRepository.save(PointHistory.use(user, menu.getPrice(), wallet.getBalance()));
 
-		LocalDateTime orderedAt = LocalDateTime.now(clock);
+		Instant orderedAt = Instant.now(clock);
 		Order savedOrder = orderRepository.save(Order.completed(user, menu, menu.getPrice(), orderedAt));
 		eventPublisher.publishEvent(new OrderCompletedEvent(
 				savedOrder.getId(), user.getId(), menu.getId(), savedOrder.getOrderPrice()));
 
 		return new OrderResponse(savedOrder.getId(), user.getId(), menu.getId(), savedOrder.getOrderPrice(),
-				wallet.getBalance(), savedOrder.getOrderedAt());
+				wallet.getBalance(), LocalDateTime.ofInstant(savedOrder.getOrderedAt(), BUSINESS_ZONE));
 	}
 }

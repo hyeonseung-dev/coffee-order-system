@@ -4,14 +4,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Clock;
-import java.time.ZoneId;
 
-/** 애플리케이션의 날짜 기반 규칙이 같은 KST 기준 시각을 사용하도록 Clock을 제공한다. */
+/** 주문 발생 시각을 환경과 무관한 UTC 절대 시각으로 생성할 Clock을 제공한다. */
 @Configuration
 public class ClockConfig {
 
 	@Bean
 	public Clock clock() {
-		return Clock.system(ZoneId.of("Asia/Seoul"));
+		return Clock.systemUTC();
 	}
 }

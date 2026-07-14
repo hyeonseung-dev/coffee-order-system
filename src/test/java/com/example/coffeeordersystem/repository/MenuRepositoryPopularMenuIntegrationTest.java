@@ -13,7 +13,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -53,18 +53,18 @@ class MenuRepositoryPopularMenuIntegrationTest {
 
 	@Test
 	void 완료_주문만_집계하고_날짜_경계와_동률_정렬과_0건_메뉴를_적용한다() {
-		orderAt(americano, LocalDateTime.of(2026, 7, 6, 0, 0));
-		orderAt(americano, LocalDateTime.of(2026, 7, 10, 12, 0));
-		orderAt(latte, LocalDateTime.of(2026, 7, 7, 10, 0));
-		orderAt(latte, LocalDateTime.of(2026, 7, 11, 10, 0));
-		orderAt(americano, LocalDateTime.of(2026, 7, 5, 23, 59, 59));
-		orderAt(americano, LocalDateTime.of(2026, 7, 13, 0, 0));
-		orderAt(inactive, LocalDateTime.of(2026, 7, 10, 12, 0));
+		orderAt(americano, Instant.parse("2026-07-05T15:00:00Z"));
+		orderAt(americano, Instant.parse("2026-07-10T03:00:00Z"));
+		orderAt(latte, Instant.parse("2026-07-07T01:00:00Z"));
+		orderAt(latte, Instant.parse("2026-07-11T01:00:00Z"));
+		orderAt(americano, Instant.parse("2026-07-05T14:59:59Z"));
+		orderAt(americano, Instant.parse("2026-07-12T15:00:00Z"));
+		orderAt(inactive, Instant.parse("2026-07-10T03:00:00Z"));
 
 		List<PopularMenuProjection> result = menuRepository.findPopularMenus(
 				MenuStatus.ACTIVE, OrderStatus.COMPLETED,
-				LocalDateTime.of(2026, 7, 6, 0, 0),
-				LocalDateTime.of(2026, 7, 13, 0, 0),
+				Instant.parse("2026-07-05T15:00:00Z"),
+				Instant.parse("2026-07-12T15:00:00Z"),
 				PageRequest.of(0, 3));
 
 		assertThat(result).extracting(PopularMenuProjection::getMenuId)
@@ -77,8 +77,8 @@ class MenuRepositoryPopularMenuIntegrationTest {
 	void 전체_주문이_0건이면_ACTIVE_메뉴를_ID_오름차순으로_최대_3개_반환한다() {
 		List<PopularMenuProjection> result = menuRepository.findPopularMenus(
 				MenuStatus.ACTIVE, OrderStatus.COMPLETED,
-				LocalDateTime.of(2026, 7, 6, 0, 0),
-				LocalDateTime.of(2026, 7, 13, 0, 0),
+				Instant.parse("2026-07-05T15:00:00Z"),
+				Instant.parse("2026-07-12T15:00:00Z"),
 				PageRequest.of(0, 3));
 
 		assertThat(result).extracting(PopularMenuProjection::getMenuId)
@@ -104,15 +104,33 @@ class MenuRepositoryPopularMenuIntegrationTest {
 		assertThat(findPopularMenus()).isEmpty();
 	}
 
+	@Test
+	void KST_날짜_시작은_포함하고_다음날_시작은_제외하며_자정직후와_오전_주문을_포함한다() {
+		Instant fromInclusive = Instant.parse("2026-07-13T15:00:00Z");
+		Instant toExclusive = Instant.parse("2026-07-14T15:00:00Z");
+		orderAt(americano, fromInclusive);
+		orderAt(americano, Instant.parse("2026-07-13T15:30:00Z"));
+		orderAt(latte, Instant.parse("2026-07-14T01:00:00Z"));
+		orderAt(latte, toExclusive);
+
+		List<PopularMenuProjection> result = menuRepository.findPopularMenus(
+				MenuStatus.ACTIVE, OrderStatus.COMPLETED, fromInclusive, toExclusive, PageRequest.of(0, 3));
+
+		assertThat(result).extracting(PopularMenuProjection::getMenuId)
+				.containsExactly(americano.getId(), latte.getId(), zeroOrder.getId());
+		assertThat(result).extracting(PopularMenuProjection::getOrderCount)
+				.containsExactly(2L, 1L, 0L);
+	}
+
 	private List<PopularMenuProjection> findPopularMenus() {
 		return menuRepository.findPopularMenus(
 				MenuStatus.ACTIVE, OrderStatus.COMPLETED,
-				LocalDateTime.of(2026, 7, 6, 0, 0),
-				LocalDateTime.of(2026, 7, 13, 0, 0),
+				Instant.parse("2026-07-05T15:00:00Z"),
+				Instant.parse("2026-07-12T15:00:00Z"),
 				PageRequest.of(0, 3));
 	}
 
-	private void orderAt(Menu menu, LocalDateTime orderedAt) {
+	private void orderAt(Menu menu, Instant orderedAt) {
 		jdbcTemplate.update(
 				"INSERT INTO orders (user_id, menu_id, order_price, status, ordered_at) VALUES (?, ?, ?, ?, ?)",
 				user.getId(), menu.getId(), menu.getPrice(), OrderStatus.COMPLETED.name(), orderedAt

@@ -10,8 +10,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.List;
 
 /**
@@ -22,6 +23,7 @@ import java.util.List;
  */
 @Service
 public class MenuService {
+	private static final ZoneId BUSINESS_ZONE = ZoneId.of("Asia/Seoul");
 
 	private final MenuRepository menuRepository;
 	private final Clock clock;
@@ -54,9 +56,9 @@ public class MenuService {
 	 */
 	@Transactional(readOnly = true)
 	public List<PopularMenuResponse> findPopularMenus() {
-		LocalDate today = LocalDate.now(clock);
-		LocalDateTime fromInclusive = today.minusDays(7).atStartOfDay();
-		LocalDateTime toExclusive = today.atStartOfDay();
+		LocalDate today = Instant.now(clock).atZone(BUSINESS_ZONE).toLocalDate();
+		Instant fromInclusive = today.minusDays(7).atStartOfDay(BUSINESS_ZONE).toInstant();
+		Instant toExclusive = today.atStartOfDay(BUSINESS_ZONE).toInstant();
 
 		return menuRepository.findPopularMenus(
 				MenuStatus.ACTIVE,

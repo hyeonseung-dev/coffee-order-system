@@ -12,7 +12,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 /**
  * 포인트 결제가 완료된 커피 주문을 저장하는 Entity다.
@@ -43,12 +43,12 @@ public class Order {
 	private OrderStatus status;
 
 	@Column(nullable = false)
-	private LocalDateTime orderedAt;
+	private Instant orderedAt;
 
 	protected Order() {
 	}
 
-	private Order(User user, Menu menu, long orderPrice, LocalDateTime orderedAt) {
+	private Order(User user, Menu menu, long orderPrice, Instant orderedAt) {
 		this.user = user;
 		this.menu = menu;
 		this.orderPrice = orderPrice;
@@ -61,7 +61,7 @@ public class Order {
 	 *
 	 * 주문 상태는 호출자가 변경할 수 없도록 COMPLETED로 고정한다.
 	 */
-	public static Order completed(User user, Menu menu, long orderPrice, LocalDateTime orderedAt) {
+	public static Order completed(User user, Menu menu, long orderPrice, Instant orderedAt) {
 		return new Order(user, menu, orderPrice, orderedAt);
 	}
 
@@ -70,5 +70,5 @@ public class Order {
 	public Menu getMenu() { return menu; }
 	public Long getOrderPrice() { return orderPrice; }
 	public OrderStatus getStatus() { return status; }
-	public LocalDateTime getOrderedAt() { return orderedAt; }
+	public Instant getOrderedAt() { return orderedAt; }
 }
