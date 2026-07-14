@@ -6,7 +6,7 @@
 
 주문 후속 처리를 주문 트랜잭션과 어떤 시점·스레드에서 분리할지 판단하기 위해, 직접 동기 호출부터 단계적으로 지연·예외·Rollback 영향을 확인한다.
 
-현재 1단계와 2단계까지 기록했다. 3단계 `AFTER_COMMIT`, 4단계 `AFTER_COMMIT + @Async`는 아직 구현하거나 측정하지 않았다.
+현재 1단계부터 3단계까지 기록했다. 4단계 `AFTER_COMMIT + @Async`는 아직 구현하거나 측정하지 않았다.
 
 ## 공통 테스트 조건
 
@@ -127,3 +127,64 @@ Event 발행 및 Listener 성공 후 실패
 ### 체크포인트 Commit
 
 - Commit SHA: `c0af605` (`test: verify synchronous order event coupling`)
+- 보강 Commit SHA: `ceeff7a` (`test: verify rollback after synchronous event delivery`)
+
+## 3단계: `@TransactionalEventListener(AFTER_COMMIT)`
+
+### 구현 흐름과 Commit 시점
+
+`OrderService.order()`는 2단계와 같이 주문 완료 Event를 트랜잭션 안에서 발행한다. `OrderCompletedEventListener`는 `@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)`로 등록되어 주문 Commit 이후에만 `OrderDataPlatformClient`를 호출한다.
+
+테스트 관찰자는 AFTER_COMMIT Listener 실행 직전에 `orders` 테이블에서 해당 주문을 조회했다. 모든 성공 시나리오에서 `orderCommittedBeforeListener=true`였으므로 Listener 실행 전에 주문 DB Commit이 완료된 것을 확인했다.
+
+관찰 시 `TransactionSynchronizationManager.isActualTransactionActive()`는 `true`였다. 이는 Spring의 트랜잭션 동기화 정리가 아직 끝나지 않은 상태를 나타내는 관찰값이며, 주문 DB Commit 이전에 Listener가 실행됐다는 뜻은 아니다. 이 단계의 Listener는 주문 Entity를 수정하거나 추가 DB 저장을 수행하지 않는다.
+
+### 실행 결과
+
+| 조건 | 요청 / 발행 / AFTER_COMMIT Listener / Client 스레드 | `order()` 측정 시간 | 호출자 결과 | 주문·포인트·USE 이력 DB 결과 |
+| --- | --- | ---: | --- | --- |
+| 정상 처리 | `Test worker` / `Test worker` / `Test worker` / `Test worker` | 2ms | 성공 응답 | 주문 1건, 잔액 7,000, USE 이력 1건 |
+| Listener 내부 Client 2초 지연 | `Test worker` / `Test worker` / `Test worker` / `Test worker` | 2,016ms | 성공 응답 | Listener 이전 Commit 확인 후 주문 1건, 잔액 7,000, USE 이력 1건 |
+| AFTER_COMMIT Client 예외 | `Test worker` / `Test worker` / `Test worker` / `Test worker` | 11ms | 성공 응답. `TransactionSynchronizationUtils`가 Listener 예외를 ERROR 로그로 기록 | 주문 1건, 잔액 7,000, USE 이력 1건 유지 |
+| 주문 저장 예외 | `Test worker` / Event 발행 전 실패 / Event 발행 전 실패 / 호출 전 실패 | 3ms | `IllegalStateException` 전파 | 주문 0건, 잔액 10,000, USE 이력 0건. Listener·Client 미호출 |
+
+### Event 발행 후 바깥 트랜잭션 Rollback
+
+테스트 전용 외부 트랜잭션 Service가 실제 `OrderService.order()`를 호출해 주문 완료 Event가 발행된 뒤, 주문 Service가 정상 반환한 다음 강제 예외를 던졌다. 실행 로그에서 Event 발행은 같은 `Test worker` 스레드에서 관찰됐고, 호출자에게 `IllegalStateException`이 전파됐다.
+
+그러나 최종 바깥 트랜잭션이 Rollback되어 Commit은 발생하지 않았다. 따라서 AFTER_COMMIT Listener와 외부 Client는 모두 0회 호출됐고, 주문은 0건, 잔액은 10,000, USE 이력은 0건이었다. 2단계에서 발생한 “외부 전송은 완료됐지만 내부 DB만 Rollback”되는 불일치는 이 조건에서 방지됐다.
+
+| 조건 | Event 발행 | Listener / Client 호출 | 주문·포인트·USE 이력 DB 결과 | 결과 |
+| --- | --- | --- | --- | --- |
+| Event 발행 후 바깥 트랜잭션 강제 예외 | `Test worker`에서 발행 관찰 | 0회 / 0회 | 주문 0건, 잔액 10,000, USE 이력 0건 | `IllegalStateException` 전파 및 전체 Rollback |
+
+### 2단계 대비
+
+- 해결됨: 주문 저장 실패로 트랜잭션이 Rollback되면 AFTER_COMMIT Listener와 Client가 호출되지 않는다. 외부 Client 예외는 이미 Commit된 주문·포인트·USE 이력을 Rollback하지 못한다.
+- 남음: `@Async`가 없으므로 네 실행 지점은 같은 `Test worker` 스레드이며, 2초 Client 지연은 `order()` 호출 흐름을 2,016ms까지 지연시킨다. Listener 실패에 대한 재시도·복구·내구성은 없다.
+- 호출 결과와 DB 결과의 차이: 이번 환경에서는 AFTER_COMMIT Client 예외가 호출자에게 전파되지 않아 Service 호출은 성공했지만, 외부 전송은 실패했고 ERROR 로그만 남았다. DB 주문은 성공 상태로 유지됐다.
+
+| 조건 | 2단계 동기 Event | 3단계 AFTER_COMMIT |
+| --- | --- | --- |
+| Event 발행 후 최종 트랜잭션 Rollback | Listener·Client 이미 실행, 내부 DB만 Rollback | Listener·Client 미실행, 내부 DB Rollback |
+
+### 4단계에서 개선할 대상
+
+`@Async`를 적용했을 때 요청 스레드와 AFTER_COMMIT Listener 스레드를 분리해 호출 흐름의 완료 시점을 외부 Client 지연과 분리할 수 있는지 확인한다. 단, 메모리 기반 비동기의 예외 관찰, 작업 거절, 재시도·내구성·유실 한계를 별도로 검증해야 한다.
+
+### 실행한 테스트 명령
+
+```bash
+./gradlew test --tests 'com.example.coffeeordersystem.service.OrderAfterCommitEventIntegrationTest' --tests 'com.example.coffeeordersystem.service.OrderServiceTest' --tests 'com.example.coffeeordersystem.service.OrderTransactionRollbackIntegrationTest'
+```
+
+### 테스트와 측정의 한계
+
+- 외부 플랫폼은 Mockito 기반 Stub이므로 실제 HTTP 연결·타임아웃·재시도를 검증하지 않는다.
+- 소요 시간은 `OrderService.order()` 호출 구간의 단일 실행값이다. AFTER_COMMIT callback은 트랜잭션 interceptor의 Commit 처리 과정에서 같은 호출 흐름으로 실행되므로 이 측정에 포함된다.
+- `isActualTransactionActive()` 관찰값만으로 Listener가 새 트랜잭션인지 여부를 판단할 수 없다. 이 실험에서는 Commit 가시성(`orderCommittedBeforeListener=true`)을 함께 확인했다.
+- 서버 종료, 프로세스 장애, 후속 처리 유실, 동시 요청은 검증하지 않았다.
+
+### 체크포인트 Commit
+
+- Commit SHA: _3단계 체크포인트 Commit 후 기록_
