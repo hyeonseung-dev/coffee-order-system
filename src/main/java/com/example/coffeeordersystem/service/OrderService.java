@@ -83,7 +83,8 @@ public class OrderService {
 		Instant orderedAt = Instant.now(clock);
 		Order savedOrder = orderRepository.save(Order.completed(user, menu, menu.getPrice(), orderedAt));
 		eventPublisher.publishEvent(new OrderCompletedEvent(
-				savedOrder.getId(), user.getId(), menu.getId(), savedOrder.getOrderPrice()));
+				savedOrder.getId(), user.getId(), menu.getId(), savedOrder.getOrderPrice(),
+				savedOrder.getOrderedAt(), BUSINESS_ZONE.getId()));
 
 		return new OrderResponse(savedOrder.getId(), user.getId(), menu.getId(), savedOrder.getOrderPrice(),
 				wallet.getBalance(), LocalDateTime.ofInstant(savedOrder.getOrderedAt(), BUSINESS_ZONE));

@@ -58,7 +58,8 @@ class OrderServiceTest {
 		when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 		when(menuRepository.findById(2L)).thenReturn(Optional.of(menu));
 		when(pointWalletRepository.findByUser(user)).thenReturn(Optional.of(wallet));
-		fixedClock("2026-07-12T03:00:00Z");
+		Instant orderedAt = Instant.parse("2026-07-12T03:00:00Z");
+		fixedClock(orderedAt);
 		when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
 			Order order = invocation.getArgument(0);
 			ReflectionTestUtils.setField(order, "id", 3L);
@@ -68,14 +69,18 @@ class OrderServiceTest {
 		OrderResponse response = orderService.order(1L, 2L);
 
 		ArgumentCaptor<PointHistory> historyCaptor = ArgumentCaptor.forClass(PointHistory.class);
+		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
 		ArgumentCaptor<OrderCompletedEvent> eventCaptor = ArgumentCaptor.forClass(OrderCompletedEvent.class);
 		verify(pointHistoryRepository).save(historyCaptor.capture());
+		verify(orderRepository).save(orderCaptor.capture());
 		verify(eventPublisher).publishEvent(eventCaptor.capture());
 		assertThat(wallet.getBalance()).isEqualTo(7000L);
 		assertThat(historyCaptor.getValue().getType()).isEqualTo(PointHistoryType.USE);
 		assertThat(historyCaptor.getValue().getAmount()).isEqualTo(3000L);
 		assertThat(historyCaptor.getValue().getBalanceAfter()).isEqualTo(7000L);
-		assertThat(eventCaptor.getValue()).isEqualTo(new OrderCompletedEvent(3L, 1L, 2L, 3000L));
+		assertThat(eventCaptor.getValue()).isEqualTo(
+				new OrderCompletedEvent(3L, 1L, 2L, 3000L, orderedAt, "Asia/Seoul"));
+		assertThat(eventCaptor.getValue().orderedAt()).isEqualTo(orderCaptor.getValue().getOrderedAt());
 		assertThat(response.remainingBalance()).isEqualTo(7000L);
 		assertThat(response.orderedAt()).isEqualTo(LocalDateTime.of(2026, 7, 12, 12, 0));
 	}
@@ -123,7 +128,7 @@ class OrderServiceTest {
 		return menu;
 	}
 
-	private void fixedClock(String instant) {
-		when(clock.instant()).thenReturn(Instant.parse(instant));
+	private void fixedClock(Instant instant) {
+		when(clock.instant()).thenReturn(instant);
 	}
 }
