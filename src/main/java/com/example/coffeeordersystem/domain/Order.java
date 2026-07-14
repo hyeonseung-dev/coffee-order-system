@@ -10,7 +10,6 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 
 import java.time.LocalDateTime;
@@ -49,11 +48,12 @@ public class Order {
 	protected Order() {
 	}
 
-	private Order(User user, Menu menu, long orderPrice) {
+	private Order(User user, Menu menu, long orderPrice, LocalDateTime orderedAt) {
 		this.user = user;
 		this.menu = menu;
 		this.orderPrice = orderPrice;
 		this.status = OrderStatus.COMPLETED;
+		this.orderedAt = orderedAt;
 	}
 
 	/**
@@ -61,13 +61,8 @@ public class Order {
 	 *
 	 * 주문 상태는 호출자가 변경할 수 없도록 COMPLETED로 고정한다.
 	 */
-	public static Order completed(User user, Menu menu, long orderPrice) {
-		return new Order(user, menu, orderPrice);
-	}
-
-	@PrePersist
-	void prePersist() {
-		this.orderedAt = LocalDateTime.now();
+	public static Order completed(User user, Menu menu, long orderPrice, LocalDateTime orderedAt) {
+		return new Order(user, menu, orderPrice, orderedAt);
 	}
 
 	public Long getId() { return id; }
