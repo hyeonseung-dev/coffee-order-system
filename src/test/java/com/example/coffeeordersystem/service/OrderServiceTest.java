@@ -26,6 +26,10 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -44,6 +48,7 @@ class OrderServiceTest {
 	@Mock private PointHistoryRepository pointHistoryRepository;
 	@Mock private OrderRepository orderRepository;
 	@Mock private ApplicationEventPublisher eventPublisher;
+	@Mock private Clock clock;
 	@InjectMocks private OrderService orderService;
 
 	@Test
@@ -54,10 +59,10 @@ class OrderServiceTest {
 		when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 		when(menuRepository.findById(2L)).thenReturn(Optional.of(menu));
 		when(pointWalletRepository.findByUser(user)).thenReturn(Optional.of(wallet));
+		fixedClock("2026-07-12T03:00:00Z");
 		when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
 			Order order = invocation.getArgument(0);
 			ReflectionTestUtils.setField(order, "id", 3L);
-			ReflectionTestUtils.setField(order, "orderedAt", java.time.LocalDateTime.of(2026, 7, 12, 12, 0));
 			return order;
 		});
 
@@ -73,6 +78,7 @@ class OrderServiceTest {
 		assertThat(historyCaptor.getValue().getBalanceAfter()).isEqualTo(7000L);
 		assertThat(eventCaptor.getValue()).isEqualTo(new OrderCompletedEvent(3L, 1L, 2L, 3000L));
 		assertThat(response.remainingBalance()).isEqualTo(7000L);
+		assertThat(response.orderedAt()).isEqualTo(LocalDateTime.of(2026, 7, 12, 12, 0));
 	}
 
 	@Test
@@ -116,5 +122,10 @@ class OrderServiceTest {
 		Menu menu = Menu.create("아메리카노", price, status);
 		ReflectionTestUtils.setField(menu, "id", id);
 		return menu;
+	}
+
+	private void fixedClock(String instant) {
+		when(clock.getZone()).thenReturn(ZoneId.of("Asia/Seoul"));
+		when(clock.instant()).thenReturn(Instant.parse(instant));
 	}
 }
