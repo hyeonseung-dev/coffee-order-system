@@ -19,7 +19,7 @@ public class OrderCompletedEventListener {
 
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	public void handle(OrderCompletedEvent event) {
-		log.info("Mock data-platform order completed: orderId={}, userId={}, menuId={}, orderPrice={}",
-				event.orderId(), event.userId(), event.menuId(), event.orderPrice());
+		log.info("Mock data-platform order completed: orderId={}, userId={}, menuId={}, orderPrice={}, orderedAt={}, businessZone={}",
+				event.orderId(), event.userId(), event.menuId(), event.orderPrice(), event.orderedAt(), event.businessZone());
 	}
 }
