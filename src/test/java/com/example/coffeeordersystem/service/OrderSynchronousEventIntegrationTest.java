@@ -32,6 +32,7 @@ import org.springframework.core.annotation.Order;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 
@@ -39,6 +40,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.mockingDetails;
 import static org.mockito.Mockito.verify;
 
 /** 일반 동기 Event가 주문 트랜잭션과 요청 스레드에 미치는 영향을 실제 JPA 트랜잭션으로 검증한다. */
@@ -57,6 +59,7 @@ class OrderSynchronousEventIntegrationTest {
 	@Autowired private PointHistoryRepository pointHistoryRepository;
 	@Autowired private OrderRepository orderRepository;
 	@Autowired private EventPublicationRecorder eventPublicationRecorder;
+	@Autowired private OrderThenFailService orderThenFailService;
 	@MockitoBean private OrderDataPlatformClient orderDataPlatformClient;
 	@MockitoSpyBean private OrderCompletedEventListener orderCompletedEventListener;
 
@@ -190,6 +193,38 @@ class OrderSynchronousEventIntegrationTest {
 		}
 	}
 
+	@Nested
+	@DisplayName("Event 전달 후 강제 Rollback")
+	class RollbackAfterEventDelivery {
+
+		@Test
+		@DisplayName("동기 Listener와 Client가 성공한 뒤 강제 예외가 발생하면 외부 전송만 남고 주문·포인트·USE 이력은 롤백된다")
+		void 동기_Listener와_Client가_성공한_뒤_강제_예외가_발생하면_외부_전송만_남고_주문_포인트_USE_이력은_롤백된다() {
+			// given
+			clientStub.succeed();
+			String requestThreadName = Thread.currentThread().getName();
+			log.info("[GIVEN] condition=Event 발행 이후 강제 Rollback requestThread={}", requestThreadName);
+
+			// when
+			long startedAt = System.nanoTime();
+			assertThatThrownBy(() -> orderThenFailService.orderThenFail(user.getId(), menu.getId()))
+					.isInstanceOf(IllegalStateException.class)
+					.hasMessage("forced rollback after synchronous event delivery");
+			long elapsedMillis = elapsedMillisSince(startedAt);
+			log.info("[WHEN] action=orderThenFail throws=IllegalStateException eventPublisherThread={} elapsedMillis={}",
+					eventPublicationRecorder.threadName(), elapsedMillis);
+
+			// then
+			assertAllThreadsAre(requestThreadName);
+			verify(orderCompletedEventListener).handle(any(OrderCompletedEvent.class));
+			verify(orderDataPlatformClient).sendOrderCompleted(any(), any(), any(), any(), any(), any());
+			assertThat(orderRepository.count()).isEqualTo(orderCountBefore);
+			assertThat(pointWalletRepository.findById(wallet.getId()).orElseThrow().getBalance()).isEqualTo(10000L);
+			assertThat(pointHistoryRepository.count()).isEqualTo(historyCountBefore);
+			logVerificationResult("Event 전달 후 강제 Rollback", requestThreadName, elapsedMillis);
+		}
+	}
+
 	private void assertAllThreadsAre(String requestThreadName) {
 		assertThat(eventPublicationRecorder.threadName()).isEqualTo(requestThreadName);
 		assertThat(listenerThreadName).isEqualTo(requestThreadName);
@@ -204,9 +239,15 @@ class OrderSynchronousEventIntegrationTest {
 		long orderCount = orderRepository.count();
 		long useHistoryCount = pointHistoryRepository.count();
 		long balance = pointWalletRepository.findById(wallet.getId()).orElseThrow().getBalance();
-		log.info("[THEN] condition={} requestThread={} eventPublisherThread={} listenerThread={} clientThread={} elapsedMillis={} orderCount={} balance={} useHistoryCount={}",
+		long listenerCallCount = mockingDetails(orderCompletedEventListener).getInvocations().stream()
+				.filter(invocation -> invocation.getMethod().getName().equals("handle"))
+				.count();
+		long clientCallCount = mockingDetails(orderDataPlatformClient).getInvocations().stream()
+				.filter(invocation -> invocation.getMethod().getName().equals("sendOrderCompleted"))
+				.count();
+		log.info("[THEN] condition={} requestThread={} eventPublisherThread={} listenerThread={} clientThread={} elapsedMillis={} orderCount={} balance={} useHistoryCount={} listenerCallCount={} clientCallCount={}",
 				condition, requestThreadName, eventPublicationRecorder.threadName(), listenerThreadName,
-				clientStub.clientThreadName(), elapsedMillis, orderCount, balance, useHistoryCount);
+				clientStub.clientThreadName(), elapsedMillis, orderCount, balance, useHistoryCount, listenerCallCount, clientCallCount);
 	}
 
 	@TestConfiguration(proxyBeanMethods = false)
@@ -214,6 +255,25 @@ class OrderSynchronousEventIntegrationTest {
 		@Bean
 		EventPublicationRecorder eventPublicationRecorder() {
 			return new EventPublicationRecorder();
+		}
+
+		@Bean
+		OrderThenFailService orderThenFailService(OrderService orderService) {
+			return new OrderThenFailService(orderService);
+		}
+	}
+
+	static class OrderThenFailService {
+		private final OrderService orderService;
+
+		OrderThenFailService(OrderService orderService) {
+			this.orderService = orderService;
+		}
+
+		@Transactional
+		public void orderThenFail(Long userId, Long menuId) {
+			orderService.order(userId, menuId);
+			throw new IllegalStateException("forced rollback after synchronous event delivery");
 		}
 	}
 

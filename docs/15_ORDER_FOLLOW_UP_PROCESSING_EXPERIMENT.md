@@ -84,6 +84,29 @@ git diff --check
 | Listener 내부 Client 예외 | `Test worker` / `Test worker` / `Test worker` / `Test worker` | 9ms | 주문 0건, 잔액 10,000, USE 이력 0건 | 예외 전파 및 Rollback |
 | 주문 저장 예외 | `Test worker` / Event 발행 전 실패 / Event 발행 전 실패 / 호출 전 실패 | 6ms | 주문 0건, 잔액 10,000, USE 이력 0건 | Event·Listener·Client 미호출, Rollback |
 
+### Event 처리 후 트랜잭션 Rollback
+
+테스트 전용 외부 트랜잭션 Service가 실제 `OrderService.order()`를 호출한 뒤 강제 예외를 던져, production 코드 변경 없이 Event 전달 이후 Rollback을 재현했다.
+
+| 조건 | 요청 / Event 발행 / Listener / Client 스레드 | 측정 시간 | 호출자·DB 결과 |
+| --- | --- | ---: | --- |
+| Event·Listener·Client 성공 후 강제 예외 | `Test worker` / `Test worker` / `Test worker` / `Test worker` | 21ms | `IllegalStateException` 전파, 주문 0건, 잔액 10,000, USE 이력 0건, Listener 1회·Client 1회 호출 |
+
+동기 Listener와 외부 Client는 Event 발행 즉시 성공적으로 실행됐지만, 그 뒤 바깥 주문 트랜잭션이 Rollback되어 내부 주문·포인트·USE 이력은 남지 않았다. 외부 전송은 이미 실행됐으므로 내부 DB와 외부 시스템의 상태 불일치 가능성이 확인됐다. 이것이 3단계 AFTER_COMMIT이 필요한 핵심 이유다.
+
+이 시나리오는 기존 주문 저장 실패와 다르다.
+
+```text
+Event 발행 전 주문 저장 실패
+→ Listener 미실행
+→ 전체 Rollback
+
+Event 발행 및 Listener 성공 후 실패
+→ 외부 Client 호출 완료
+→ 내부 DB만 Rollback
+→ 외부 시스템과 불일치 가능
+```
+
 ### 1단계 대비
 
 - 해결됨: `OrderService`는 `OrderDataPlatformClient` 구현을 직접 의존하거나 호출하지 않는다. 외부 전송 책임은 `OrderCompletedEventListener`로 이동했다.
@@ -103,4 +126,4 @@ git diff --check
 
 ### 체크포인트 Commit
 
-- Commit SHA: _미기록 — 2단계 변경은 Human 승인 전 Commit하지 않음_
+- Commit SHA: `c0af605` (`test: verify synchronous order event coupling`)
