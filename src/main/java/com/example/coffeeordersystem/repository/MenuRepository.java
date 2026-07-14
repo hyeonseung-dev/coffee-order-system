@@ -2,8 +2,13 @@ package com.example.coffeeordersystem.repository;
 
 import com.example.coffeeordersystem.domain.Menu;
 import com.example.coffeeordersystem.domain.MenuStatus;
+import com.example.coffeeordersystem.domain.OrderStatus;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -20,4 +25,23 @@ public interface MenuRepository extends JpaRepository<Menu, Long> {
 	 * @return 조건에 맞는 메뉴 Entity 목록
 	 */
 	List<Menu> findAllByStatusOrderByIdAsc(MenuStatus status);
+
+	@Query("""
+			SELECT m.id AS menuId, m.name AS name, COUNT(o.id) AS orderCount
+			FROM Menu m
+			LEFT JOIN Order o ON o.menu = m
+				AND o.status = :orderStatus
+				AND o.orderedAt >= :fromInclusive
+				AND o.orderedAt < :toExclusive
+			WHERE m.status = :menuStatus
+			GROUP BY m.id, m.name
+			ORDER BY COUNT(o.id) DESC, m.id ASC
+			""")
+	List<PopularMenuProjection> findPopularMenus(
+			@Param("menuStatus") MenuStatus menuStatus,
+			@Param("orderStatus") OrderStatus orderStatus,
+			@Param("fromInclusive") LocalDateTime fromInclusive,
+			@Param("toExclusive") LocalDateTime toExclusive,
+			Pageable pageable
+	);
 }
