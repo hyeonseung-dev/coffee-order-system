@@ -29,7 +29,6 @@ import java.util.Optional;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -125,7 +124,6 @@ class OrderServiceTest {
 	}
 
 	private void fixedClock(String instant) {
-		when(clock.getZone()).thenReturn(ZoneId.of("Asia/Seoul"));
 		when(clock.instant()).thenReturn(Instant.parse(instant));
 	}
 }

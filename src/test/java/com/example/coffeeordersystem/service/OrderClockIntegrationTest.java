@@ -28,7 +28,7 @@ import java.time.ZoneId;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** 고정 Clock으로 생성한 주문 시각이 응답과 영속 데이터에 동일하게 저장되는지 검증한다. */
+/** 고정 UTC Clock으로 생성한 주문 시각의 저장과 KST 응답 변환을 검증한다. */
 @SpringBootTest
 @ActiveProfiles({"test", "prod"})
 @Import(OrderClockIntegrationTest.FixedClockConfiguration.class)
@@ -65,13 +65,13 @@ class OrderClockIntegrationTest {
 	}
 
 	@Test
-	void 고정_Clock의_KST_시각을_응답과_orders에_동일하게_저장한다() {
+	void 고정_UTC_Instant를_저장하고_응답은_KST_LocalDateTime으로_변환한다() {
 		OrderResponse response = orderService.order(user.getId(), menu.getId());
 		orderId = response.orderId();
 
-		LocalDateTime expected = LocalDateTime.of(2026, 7, 12, 23, 59, 59);
-		assertThat(response.orderedAt()).isEqualTo(expected);
-		assertThat(orderRepository.findById(orderId).orElseThrow().getOrderedAt()).isEqualTo(expected);
+		Instant expectedInstant = Instant.parse("2026-07-12T14:59:59Z");
+		assertThat(response.orderedAt()).isEqualTo(LocalDateTime.of(2026, 7, 12, 23, 59, 59));
+		assertThat(orderRepository.findById(orderId).orElseThrow().getOrderedAt()).isEqualTo(expectedInstant);
 	}
 
 	@TestConfiguration(proxyBeanMethods = false)
@@ -79,7 +79,7 @@ class OrderClockIntegrationTest {
 		@Bean
 		@Primary
 		Clock fixedClock() {
-			return Clock.fixed(Instant.parse("2026-07-12T14:59:59Z"), ZoneId.of("Asia/Seoul"));
+			return Clock.fixed(Instant.parse("2026-07-12T14:59:59Z"), ZoneId.of("UTC"));
 		}
 	}
 }

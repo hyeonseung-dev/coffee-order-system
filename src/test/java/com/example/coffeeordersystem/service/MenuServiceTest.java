@@ -16,7 +16,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneId;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -71,15 +70,14 @@ class MenuServiceTest {
 
 	@Test
 	void 직전_7개_완료_일자와_TOP3_조건으로_인기_메뉴를_조회한다() {
-		when(clock.getZone()).thenReturn(ZoneId.of("Asia/Seoul"));
 		when(clock.instant()).thenReturn(Instant.parse("2026-07-13T03:00:00Z"));
 		PopularMenuProjection americano = popularMenu(1L, "Americano", 5L);
 		PopularMenuProjection latte = popularMenu(2L, "Latte", 3L);
 		when(menuRepository.findPopularMenus(
 				org.mockito.ArgumentMatchers.eq(MenuStatus.ACTIVE),
 				org.mockito.ArgumentMatchers.eq(com.example.coffeeordersystem.domain.OrderStatus.COMPLETED),
-				org.mockito.ArgumentMatchers.eq(java.time.LocalDateTime.of(2026, 7, 6, 0, 0)),
-				org.mockito.ArgumentMatchers.eq(java.time.LocalDateTime.of(2026, 7, 13, 0, 0)),
+				org.mockito.ArgumentMatchers.eq(Instant.parse("2026-07-05T15:00:00Z")),
+				org.mockito.ArgumentMatchers.eq(Instant.parse("2026-07-12T15:00:00Z")),
 				org.mockito.ArgumentMatchers.any(Pageable.class)
 		)).thenReturn(List.of(americano, latte));
 
@@ -93,8 +91,8 @@ class MenuServiceTest {
 		verify(menuRepository).findPopularMenus(
 				org.mockito.ArgumentMatchers.eq(MenuStatus.ACTIVE),
 				org.mockito.ArgumentMatchers.eq(com.example.coffeeordersystem.domain.OrderStatus.COMPLETED),
-				org.mockito.ArgumentMatchers.eq(java.time.LocalDateTime.of(2026, 7, 6, 0, 0)),
-				org.mockito.ArgumentMatchers.eq(java.time.LocalDateTime.of(2026, 7, 13, 0, 0)),
+				org.mockito.ArgumentMatchers.eq(Instant.parse("2026-07-05T15:00:00Z")),
+				org.mockito.ArgumentMatchers.eq(Instant.parse("2026-07-12T15:00:00Z")),
 				pageableCaptor.capture()
 		);
 		assertThat(pageableCaptor.getValue().getPageNumber()).isZero();

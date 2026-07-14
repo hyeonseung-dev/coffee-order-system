@@ -8,7 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -40,8 +40,8 @@ public interface MenuRepository extends JpaRepository<Menu, Long> {
 	List<PopularMenuProjection> findPopularMenus(
 			@Param("menuStatus") MenuStatus menuStatus,
 			@Param("orderStatus") OrderStatus orderStatus,
-			@Param("fromInclusive") LocalDateTime fromInclusive,
-			@Param("toExclusive") LocalDateTime toExclusive,
+			@Param("fromInclusive") Instant fromInclusive,
+			@Param("toExclusive") Instant toExclusive,
 			Pageable pageable
 	);
 }
