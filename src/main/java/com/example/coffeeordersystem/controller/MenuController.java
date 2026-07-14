@@ -2,6 +2,8 @@ package com.example.coffeeordersystem.controller;
 
 import com.example.coffeeordersystem.dto.MenuListResponse;
 import com.example.coffeeordersystem.dto.MenuResponse;
+import com.example.coffeeordersystem.dto.PopularMenuListResponse;
+import com.example.coffeeordersystem.dto.PopularMenuResponse;
 import com.example.coffeeordersystem.service.MenuService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,5 +36,11 @@ public class MenuController {
 	public ResponseEntity<MenuListResponse> getMenus() {
 		List<MenuResponse> menus = menuService.findActiveMenus();
 		return ResponseEntity.ok(new MenuListResponse(menus));
+	}
+
+	@GetMapping("/popular")
+	public ResponseEntity<PopularMenuListResponse> getPopularMenus() {
+		List<PopularMenuResponse> menus = menuService.findPopularMenus();
+		return ResponseEntity.ok(new PopularMenuListResponse(menus));
 	}
 }
