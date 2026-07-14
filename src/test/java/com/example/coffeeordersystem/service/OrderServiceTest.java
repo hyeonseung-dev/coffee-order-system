@@ -8,7 +8,7 @@ import com.example.coffeeordersystem.domain.PointHistoryType;
 import com.example.coffeeordersystem.domain.PointWallet;
 import com.example.coffeeordersystem.domain.User;
 import com.example.coffeeordersystem.dto.OrderResponse;
-import com.example.coffeeordersystem.event.OrderCompletedEvent;
+import com.example.coffeeordersystem.external.OrderDataPlatformClient;
 import com.example.coffeeordersystem.exception.BusinessException;
 import com.example.coffeeordersystem.exception.ErrorCode;
 import com.example.coffeeordersystem.repository.MenuRepository;
@@ -22,7 +22,6 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
@@ -46,12 +45,12 @@ class OrderServiceTest {
 	@Mock private PointWalletRepository pointWalletRepository;
 	@Mock private PointHistoryRepository pointHistoryRepository;
 	@Mock private OrderRepository orderRepository;
-	@Mock private ApplicationEventPublisher eventPublisher;
+	@Mock private OrderDataPlatformClient orderDataPlatformClient;
 	@Mock private Clock clock;
 	@InjectMocks private OrderService orderService;
 
 	@Test
-	void 정상_주문은_포인트를_차감하고_USE_이력과_완료_주문_이벤트를_생성한다() {
+	void 정상_주문은_포인트를_차감하고_USE_이력과_외부_플랫폼을_직접_호출한다() {
 		User user = user(1L);
 		Menu menu = menu(2L, MenuStatus.ACTIVE, 3000L);
 		PointWallet wallet = PointWallet.create(user, 10000L);
@@ -70,17 +69,14 @@ class OrderServiceTest {
 
 		ArgumentCaptor<PointHistory> historyCaptor = ArgumentCaptor.forClass(PointHistory.class);
 		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
-		ArgumentCaptor<OrderCompletedEvent> eventCaptor = ArgumentCaptor.forClass(OrderCompletedEvent.class);
 		verify(pointHistoryRepository).save(historyCaptor.capture());
 		verify(orderRepository).save(orderCaptor.capture());
-		verify(eventPublisher).publishEvent(eventCaptor.capture());
+		verify(orderDataPlatformClient).sendOrderCompleted(3L, 1L, 2L, 3000L, orderedAt, "Asia/Seoul");
 		assertThat(wallet.getBalance()).isEqualTo(7000L);
 		assertThat(historyCaptor.getValue().getType()).isEqualTo(PointHistoryType.USE);
 		assertThat(historyCaptor.getValue().getAmount()).isEqualTo(3000L);
 		assertThat(historyCaptor.getValue().getBalanceAfter()).isEqualTo(7000L);
-		assertThat(eventCaptor.getValue()).isEqualTo(
-				new OrderCompletedEvent(3L, 1L, 2L, 3000L, orderedAt, "Asia/Seoul"));
-		assertThat(eventCaptor.getValue().orderedAt()).isEqualTo(orderCaptor.getValue().getOrderedAt());
+		assertThat(orderCaptor.getValue().getOrderedAt()).isEqualTo(orderedAt);
 		assertThat(response.remainingBalance()).isEqualTo(7000L);
 		assertThat(response.orderedAt()).isEqualTo(LocalDateTime.of(2026, 7, 12, 12, 0));
 	}
