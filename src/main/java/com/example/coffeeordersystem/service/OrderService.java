@@ -57,8 +57,9 @@ public class OrderService {
 	/**
 	 * 사용자의 포인트로 활성 메뉴 한 개를 결제한다.
 	 *
-	 * 사용자 조회부터 완료 이벤트 발행 요청까지 단일 트랜잭션으로 처리한다. 이벤트의
-	 * 실제 후속 처리는 AFTER_COMMIT listener가 맡아 롤백된 주문에는 실행되지 않는다.
+	 * 사용자 조회부터 주문 완료 Event 발행까지 단일 트랜잭션으로 처리한다.
+	 * 일반 동기 Listener가 같은 호출 흐름에서 실행되므로 후속 처리의 지연과 예외도
+	 * 주문 응답과 Rollback에 직접 영향을 준다.
 	 *
 	 * @param userId 주문 사용자 ID
 	 * @param menuId 주문 메뉴 ID

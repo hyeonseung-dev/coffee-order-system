@@ -51,7 +51,7 @@ class OrderServiceTest {
 	@InjectMocks private OrderService orderService;
 
 	@Test
-	void 정상_주문은_포인트를_차감하고_USE_이력과_완료_주문_이벤트를_생성한다() {
+	void 정상_주문은_포인트를_차감하고_USE_이력과_주문_완료_Event를_발행한다() {
 		User user = user(1L);
 		Menu menu = menu(2L, MenuStatus.ACTIVE, 3000L);
 		PointWallet wallet = PointWallet.create(user, 10000L);
@@ -70,17 +70,17 @@ class OrderServiceTest {
 
 		ArgumentCaptor<PointHistory> historyCaptor = ArgumentCaptor.forClass(PointHistory.class);
 		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
-		ArgumentCaptor<OrderCompletedEvent> eventCaptor = ArgumentCaptor.forClass(OrderCompletedEvent.class);
 		verify(pointHistoryRepository).save(historyCaptor.capture());
 		verify(orderRepository).save(orderCaptor.capture());
+		ArgumentCaptor<OrderCompletedEvent> eventCaptor = ArgumentCaptor.forClass(OrderCompletedEvent.class);
 		verify(eventPublisher).publishEvent(eventCaptor.capture());
 		assertThat(wallet.getBalance()).isEqualTo(7000L);
 		assertThat(historyCaptor.getValue().getType()).isEqualTo(PointHistoryType.USE);
 		assertThat(historyCaptor.getValue().getAmount()).isEqualTo(3000L);
 		assertThat(historyCaptor.getValue().getBalanceAfter()).isEqualTo(7000L);
+		assertThat(orderCaptor.getValue().getOrderedAt()).isEqualTo(orderedAt);
 		assertThat(eventCaptor.getValue()).isEqualTo(
 				new OrderCompletedEvent(3L, 1L, 2L, 3000L, orderedAt, "Asia/Seoul"));
-		assertThat(eventCaptor.getValue().orderedAt()).isEqualTo(orderCaptor.getValue().getOrderedAt());
 		assertThat(response.remainingBalance()).isEqualTo(7000L);
 		assertThat(response.orderedAt()).isEqualTo(LocalDateTime.of(2026, 7, 12, 12, 0));
 	}
