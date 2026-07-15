@@ -23,7 +23,7 @@ public class OutboxPublisher {
 	@Transactional
 	public void publishPending() {
 		for (OutboxEvent event : repository.findByStatusOrderByCreatedAtAsc(OutboxEventStatus.PENDING, PageRequest.of(0,batchSize))) {
-			try { OrderCompletedOutboxPayload p=objectMapper.readValue(event.getPayload(), OrderCompletedOutboxPayload.class); client.sendOrderCompleted(p.orderId(),p.userId(),p.menuId(),p.orderPrice(),p.orderedAt(),p.businessZone()); event.markSent(clock.instant()); }
+			try { OrderCompletedOutboxPayload p=objectMapper.readValue(event.getPayload(), OrderCompletedOutboxPayload.class); client.sendOrderCompleted(p); event.markSent(clock.instant()); }
 			catch (Exception e) { event.markFailed(e.getClass().getSimpleName()+": "+e.getMessage(), maxRetryCount); }
 		}
 	}

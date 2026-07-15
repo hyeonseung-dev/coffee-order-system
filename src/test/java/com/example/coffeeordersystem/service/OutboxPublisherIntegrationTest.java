@@ -16,6 +16,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import org.mockito.ArgumentCaptor;
 
 @SpringBootTest(properties="outbox.publisher.max-retry-count=3") @ActiveProfiles("test")
 class OutboxPublisherIntegrationTest {
@@ -31,14 +32,14 @@ class OutboxPublisherIntegrationTest {
 	}
 	@Test void 성공하면_SENT이고_다시_전송하지_않는다() throws Exception {
 		OutboxEvent e=pending(); repository.save(e); publisher.publishPending();
-		assertThat(repository.findById(e.getId()).orElseThrow().getStatus()).isEqualTo(OutboxEventStatus.SENT); assertThat(repository.findById(e.getId()).orElseThrow().getProcessedAt()).isNotNull(); verify(client,times(1)).sendOrderCompleted(any(),any(),any(),any(),any(),any());
-		publisher.publishPending(); verify(client,times(1)).sendOrderCompleted(any(),any(),any(),any(),any(),any());
+		assertThat(repository.findById(e.getId()).orElseThrow().getStatus()).isEqualTo(OutboxEventStatus.SENT); assertThat(repository.findById(e.getId()).orElseThrow().getProcessedAt()).isNotNull(); ArgumentCaptor<OrderCompletedOutboxPayload> captor=ArgumentCaptor.forClass(OrderCompletedOutboxPayload.class); verify(client).sendOrderCompleted(captor.capture()); assertThat(captor.getValue().eventId()).isEqualTo(e.getEventId());
+		publisher.publishPending(); verify(client,times(1)).sendOrderCompleted(any());
 	}
 	@Test void 실패는_재시도후_SENT_최대면_FAILED() throws Exception {
-		OutboxEvent e=repository.save(pending()); doThrow(new IllegalStateException("down")).when(client).sendOrderCompleted(any(),any(),any(),any(),any(),any());
+		OutboxEvent e=repository.save(pending()); doThrow(new IllegalStateException("down")).when(client).sendOrderCompleted(any());
 		publisher.publishPending(); assertThat(repository.findById(e.getId()).orElseThrow().getRetryCount()).isEqualTo(1); assertThat(repository.findById(e.getId()).orElseThrow().getLastError()).contains("down"); assertThat(repository.findById(e.getId()).orElseThrow().getStatus()).isEqualTo(OutboxEventStatus.PENDING);
-		doNothing().when(client).sendOrderCompleted(any(),any(),any(),any(),any(),any()); publisher.publishPending(); assertThat(repository.findById(e.getId()).orElseThrow().getStatus()).isEqualTo(OutboxEventStatus.SENT);
-		OutboxEvent failed=repository.save(pending()); doThrow(new IllegalStateException("down")).when(client).sendOrderCompleted(any(),any(),any(),any(),any(),any()); publisher.publishPending(); publisher.publishPending(); publisher.publishPending(); assertThat(repository.findById(failed.getId()).orElseThrow().getStatus()).isEqualTo(OutboxEventStatus.FAILED);
+		doNothing().when(client).sendOrderCompleted(any()); publisher.publishPending(); assertThat(repository.findById(e.getId()).orElseThrow().getStatus()).isEqualTo(OutboxEventStatus.SENT); ArgumentCaptor<OrderCompletedOutboxPayload> retry=ArgumentCaptor.forClass(OrderCompletedOutboxPayload.class); verify(client,times(2)).sendOrderCompleted(retry.capture()); assertThat(retry.getAllValues().get(0).eventId()).isEqualTo(retry.getAllValues().get(1).eventId());
+		OutboxEvent failed=repository.save(pending()); doThrow(new IllegalStateException("down")).when(client).sendOrderCompleted(any()); publisher.publishPending(); publisher.publishPending(); publisher.publishPending(); assertThat(repository.findById(failed.getId()).orElseThrow().getStatus()).isEqualTo(OutboxEventStatus.FAILED);
 	}
 	private OutboxEvent pending() throws Exception { String id=UUID.randomUUID().toString(); Instant at=Instant.parse("2026-07-15T00:00:00Z"); String p=mapper.writeValueAsString(new OrderCompletedOutboxPayload(id,"ORDER_COMPLETED",1L,2L,3L,3000L,at,"Asia/Seoul")); return OutboxEvent.pending(id,"ORDER_COMPLETED",1L,p,at); }
 }

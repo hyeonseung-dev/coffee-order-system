@@ -25,7 +25,7 @@ public final class OrderDataPlatformClientStub {
 		doAnswer(invocation -> {
 			recordClientExecution("정상 응답");
 			return null;
-		}).when(client).sendOrderCompleted(any(), any(), any(), any(), any(), any());
+		}).when(client).sendOrderCompleted(any());
 	}
 
 	public void delayFor(Duration duration) {
@@ -39,14 +39,14 @@ public final class OrderDataPlatformClientStub {
 			}
 			log.info("[CLIENT] condition={} thread={}", duration.toMillis() + "ms 지연 완료", clientThreadName);
 			return null;
-		}).when(client).sendOrderCompleted(any(), any(), any(), any(), any(), any());
+		}).when(client).sendOrderCompleted(any());
 	}
 
 	public void failWith(RuntimeException exception) {
 		doAnswer(invocation -> {
 			recordClientExecution("예외 발생: " + exception.getMessage());
 			throw exception;
-		}).when(client).sendOrderCompleted(any(), any(), any(), any(), any(), any());
+		}).when(client).sendOrderCompleted(any());
 	}
 
 	public String clientThreadName() {
