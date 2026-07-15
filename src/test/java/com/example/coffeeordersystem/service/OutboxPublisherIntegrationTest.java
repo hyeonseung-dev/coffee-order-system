@@ -23,10 +23,12 @@ class OutboxPublisherIntegrationTest {
 	@Autowired OutboxPublisher publisher; @Autowired OutboxEventRepository repository; @Autowired ObjectMapper mapper;
 	@Autowired OrderService orderService; @Autowired UserRepository users; @Autowired MenuRepository menus; @Autowired PointWalletRepository wallets; @Autowired PointHistoryRepository histories; @Autowired OrderRepository orders;
 	@MockitoBean OrderDataPlatformClient client;
-	@AfterEach void clean(){ repository.deleteAll(); orders.deleteAll(); histories.deleteAll(); wallets.deleteAll(); menus.deleteAll(); users.deleteAll(); }
+	@BeforeEach void setUp(){ clean(); }
+	@AfterEach void tearDown(){ clean(); }
+	private void clean(){ repository.deleteAll(); orders.deleteAll(); histories.deleteAll(); wallets.deleteAll(); menus.deleteAll(); users.deleteAll(); }
 	@Test void 주문과_포인트_USE_Outbox_PENDING은_함께_Commit되고_Payload가_주문값과_일치한다() throws Exception {
 		User u=users.save(User.create("outbox-user")); wallets.save(PointWallet.create(u,10000L)); Menu m=menus.save(Menu.create("outbox-menu",3000L,MenuStatus.ACTIVE));
-		var response=orderService.order(u.getId(),m.getId()); OutboxEvent event=repository.findAll().get(0); OrderCompletedOutboxPayload p=mapper.readValue(event.getPayload(),OrderCompletedOutboxPayload.class);
+		var response=orderService.order(u.getId(),m.getId()); assertThat(repository.findAll()).hasSize(1); OutboxEvent event=repository.findAll().get(0); OrderCompletedOutboxPayload p=mapper.readValue(event.getPayload(),OrderCompletedOutboxPayload.class);
 		assertThat(orders.count()).isEqualTo(1); assertThat(wallets.findByUser(u).orElseThrow().getBalance()).isEqualTo(7000); assertThat(histories.count()).isEqualTo(1); assertThat(event.getStatus()).isEqualTo(OutboxEventStatus.PENDING);
 		assertThat(p.eventId()).isEqualTo(event.getEventId()); assertThat(p.eventType()).isEqualTo("ORDER_COMPLETED"); assertThat(p.orderId()).isEqualTo(response.orderId()); assertThat(p.userId()).isEqualTo(u.getId()); assertThat(p.menuId()).isEqualTo(m.getId()); assertThat(p.orderPrice()).isEqualTo(3000); assertThat(p.orderedAt()).isEqualTo(orders.findById(response.orderId()).orElseThrow().getOrderedAt()); assertThat(p.businessZone()).isEqualTo("Asia/Seoul");
 	}
