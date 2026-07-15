@@ -24,6 +24,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -87,7 +88,7 @@ public class OrderService {
 		wallet.debit(menu.getPrice());
 		pointHistoryRepository.save(PointHistory.use(user, menu.getPrice(), wallet.getBalance()));
 
-		Instant orderedAt = Instant.now(clock);
+		Instant orderedAt = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
 		Order savedOrder = orderRepository.save(Order.completed(user, menu, menu.getPrice(), orderedAt));
 		String eventId = UUID.randomUUID().toString();
 		try {

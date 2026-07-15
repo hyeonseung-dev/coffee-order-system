@@ -30,7 +30,14 @@ class OutboxPublisherIntegrationTest {
 		User u=users.save(User.create("outbox-user")); wallets.save(PointWallet.create(u,10000L)); Menu m=menus.save(Menu.create("outbox-menu",3000L,MenuStatus.ACTIVE));
 		var response=orderService.order(u.getId(),m.getId()); assertThat(repository.findAll()).hasSize(1); OutboxEvent event=repository.findAll().get(0); OrderCompletedOutboxPayload p=mapper.readValue(event.getPayload(),OrderCompletedOutboxPayload.class);
 		assertThat(orders.count()).isEqualTo(1); assertThat(wallets.findByUser(u).orElseThrow().getBalance()).isEqualTo(7000); assertThat(histories.count()).isEqualTo(1); assertThat(event.getStatus()).isEqualTo(OutboxEventStatus.PENDING);
-		assertThat(p.eventId()).isEqualTo(event.getEventId()); assertThat(p.eventType()).isEqualTo("ORDER_COMPLETED"); assertThat(p.orderId()).isEqualTo(response.orderId()); assertThat(p.userId()).isEqualTo(u.getId()); assertThat(p.menuId()).isEqualTo(m.getId()); assertThat(p.orderPrice()).isEqualTo(3000); assertThat(p.orderedAt()).isEqualTo(orders.findById(response.orderId()).orElseThrow().getOrderedAt()); assertThat(p.businessZone()).isEqualTo("Asia/Seoul");
+		assertThat(p.eventId()).isEqualTo(event.getEventId());
+		assertThat(p.eventType()).isEqualTo("ORDER_COMPLETED");
+		assertThat(p.orderId()).isEqualTo(response.orderId());
+		assertThat(p.userId()).isEqualTo(u.getId());
+		assertThat(p.menuId()).isEqualTo(m.getId());
+		assertThat(p.orderPrice()).isEqualTo(3000);
+		assertThat(p.orderedAt()).isEqualTo(orders.findById(response.orderId()).orElseThrow().getOrderedAt());
+		assertThat(p.businessZone()).isEqualTo("Asia/Seoul");
 	}
 	@Test void 성공하면_SENT이고_다시_전송하지_않는다() throws Exception {
 		OutboxEvent e=pending(); repository.save(e); publisher.publishPending();
