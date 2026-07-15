@@ -3,6 +3,7 @@ package com.example.coffeeordersystem.event;
 import com.example.coffeeordersystem.external.OrderDataPlatformClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -19,6 +20,7 @@ public class OrderCompletedEventListener {
 		this.orderDataPlatformClient = orderDataPlatformClient;
 	}
 
+	@Async("orderFollowUpExecutor")
 	@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
 	public void handle(OrderCompletedEvent event) {
 		log.info("[LISTENER] orderId={} thread={}", event.orderId(), Thread.currentThread().getName());

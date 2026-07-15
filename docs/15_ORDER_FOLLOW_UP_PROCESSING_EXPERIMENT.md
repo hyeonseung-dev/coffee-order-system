@@ -188,3 +188,63 @@ Event 발행 및 Listener 성공 후 실패
 ### 체크포인트 Commit
 
 - Commit SHA: _3단계 체크포인트 Commit 후 기록_
+
+## 4단계: `AFTER_COMMIT + @Async`
+
+### 구현 흐름과 Executor
+
+3단계의 `@TransactionalEventListener(phase = AFTER_COMMIT)`는 유지하고 Listener에 `@Async("orderFollowUpExecutor")`를 추가했다. 전용 `ThreadPoolTaskExecutor`는 운영 기본값으로 core 2, max 4, queue 100, `order-follow-up-` prefix를 사용한다. 포화 시 호출자 스레드를 대신 점유하지 않고 후속 작업 유실 가능성을 드러내기 위해 `AbortPolicy` 기반 즉시 거절을 명시했다. 포화 검증은 production 기본값을 줄이지 않고 테스트 속성 `1 / 1 / 1`로 분리했다.
+
+### 실제 결과
+
+| 조건 | 요청 / 발행 / Listener / Client 스레드 | 측정·DB 결과 |
+| --- | --- | --- |
+| 정상 | `Test worker` / `Test worker` / `order-follow-up-2` / `order-follow-up-2` | `order()` 3ms, 주문 1건·잔액 7,000·USE 1건 |
+| Client 2초 지연 | `Test worker` / `Test worker` / `order-follow-up-1` / `order-follow-up-1` | `order()` 6ms, Client 실행 2,005ms. Client 완료 전에도 DB Commit 확인 |
+| Client 예외 | `Test worker` / `Test worker` / `order-follow-up-1` / `order-follow-up-1` | 호출자 예외 없음, 테스트용 Client 예외 기록 장치가 `IllegalStateException` 확인, DB Commit 유지 |
+| Event 후 바깥 Rollback | Event는 `Test worker`에서 관찰 | Listener·Client 0회, 주문 0건·잔액 10,000·USE 0건 |
+| Executor 포화 | 테스트 전용 `1 / 1 / 1` | 첫 작업 실행·둘째 큐 대기 후 셋째 Event 거절. 주문 3건은 Commit, Client는 2회만 실행 |
+
+비동기 예외는 반환값 없는 `@Async` 메서드의 예외 처리기가 `[ASYNC]` 로그로 기록하며, 테스트는 Client Stub이 실제 비동기 스레드에서 던진 예외 객체를 기록하고 Assertion으로 확인했다. 자동 재시도는 없다.
+
+### 3단계 대비와 한계
+
+| 항목 | 3단계 AFTER_COMMIT | 4단계 AFTER_COMMIT + Async |
+| --- | --- | --- |
+| 주문 Commit 이후 실행 | O | O |
+| 요청·Listener 스레드 | 동일 | 분리 |
+| 2초 Client 지연 | 요청 흐름 지연 | 요청 흐름과 분리 |
+| Client 예외 | 주문 Commit 유지 | 주문 Commit 유지 |
+| 호출자 예외 영향 | 일반적으로 직접 전파되지 않음 | 전파되지 않음 |
+| 작업 유실 가능성 | 존재 | 존재 |
+| Executor 포화 | 해당 없음 | 작업 거절 가능 |
+| 재시도·복구 | 없음 | 없음 |
+
+`@Async`는 Commit 이후 실행과 요청 지연 분리는 제공하지만 전달 보장·재시도·복구를 제공하지 않는다. 포화 시 세 번째 주문 DB는 Commit됐지만 외부 전송은 거절되어 유실될 수 있었다. 이 내구성·재처리 문제는 후속 Issue #46 Transactional Outbox에서 다룰 대상이다.
+
+### 단계별 체크포인트와 최종 비교
+
+- 1단계: `f00cacc`
+- 2단계: `c0af605`
+- 2단계 보강: `ceeff7a`
+- 3단계: `d31d73a`
+- 4단계: _체크포인트 Commit 후 기록_
+
+| 단계 | 실행 방식 | Commit 경계 | 요청 스레드 영향 | 외부 실패 영향 | 남은 한계 |
+| --- | --- | --- | --- | --- | --- |
+| 1단계 | Client 직접 동기 호출 | 주문 트랜잭션 내부 | 지연됨 | 주문 Rollback | 코드·실행 결합 |
+| 2단계 | 동기 Event | 주문 트랜잭션 내부 | 지연됨 | 주문 Rollback | 발행 후 Rollback 시 외부 불일치 |
+| 3단계 | AFTER_COMMIT | Commit 이후, 같은 스레드 | 지연됨 | 주문 Commit 유지 | 재시도·복구 없음 |
+| 4단계 | AFTER_COMMIT + Async | Commit 이후, 별도 스레드 | 분리됨 | 주문 Commit 유지 | 포화·종료·실패 시 유실 가능 |
+
+최종 유지 구조는 다음과 같다.
+
+```text
+ApplicationEventPublisher
+→ OrderCompletedEvent
+→ @TransactionalEventListener(AFTER_COMMIT)
+→ @Async("orderFollowUpExecutor")
+→ OrderDataPlatformClient
+```
+
+`AFTER_COMMIT`은 주문 Commit 성공 후에만 Listener를 실행하도록 보장한다. `@Async`는 Listener 실행 스레드를 분리하지만 전달 보장이나 재시도를 제공하지 않는다. `REQUIRES_NEW`는 별도 DB 트랜잭션 전파 방식일 뿐 외부 호출 전달 보장이나 요청 스레드 분리를 제공하지 않으므로 이 실험에는 적용하지 않았다.
