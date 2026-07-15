@@ -8,7 +8,7 @@ import com.example.coffeeordersystem.domain.PointHistoryType;
 import com.example.coffeeordersystem.domain.PointWallet;
 import com.example.coffeeordersystem.domain.User;
 import com.example.coffeeordersystem.dto.OrderResponse;
-import com.example.coffeeordersystem.event.OrderCompletedEvent;
+import com.example.coffeeordersystem.domain.OutboxEvent;
 import com.example.coffeeordersystem.exception.BusinessException;
 import com.example.coffeeordersystem.exception.ErrorCode;
 import com.example.coffeeordersystem.repository.MenuRepository;
@@ -22,7 +22,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.context.ApplicationEventPublisher;
+import com.example.coffeeordersystem.repository.OutboxEventRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Optional;
@@ -46,12 +47,13 @@ class OrderServiceTest {
 	@Mock private PointWalletRepository pointWalletRepository;
 	@Mock private PointHistoryRepository pointHistoryRepository;
 	@Mock private OrderRepository orderRepository;
-	@Mock private ApplicationEventPublisher eventPublisher;
+	@Mock private OutboxEventRepository outboxEventRepository;
+	@Mock private ObjectMapper objectMapper;
 	@Mock private Clock clock;
 	@InjectMocks private OrderService orderService;
 
 	@Test
-	void 정상_주문은_포인트를_차감하고_USE_이력과_주문_완료_Event를_발행한다() {
+	void 정상_주문은_포인트를_차감하고_USE_이력과_주문_완료_Outbox를_저장한다() throws Exception {
 		User user = user(1L);
 		Menu menu = menu(2L, MenuStatus.ACTIVE, 3000L);
 		PointWallet wallet = PointWallet.create(user, 10000L);
@@ -65,6 +67,7 @@ class OrderServiceTest {
 			ReflectionTestUtils.setField(order, "id", 3L);
 			return order;
 		});
+		when(objectMapper.writeValueAsString(any())).thenReturn("payload");
 
 		OrderResponse response = orderService.order(1L, 2L);
 
@@ -72,15 +75,15 @@ class OrderServiceTest {
 		ArgumentCaptor<Order> orderCaptor = ArgumentCaptor.forClass(Order.class);
 		verify(pointHistoryRepository).save(historyCaptor.capture());
 		verify(orderRepository).save(orderCaptor.capture());
-		ArgumentCaptor<OrderCompletedEvent> eventCaptor = ArgumentCaptor.forClass(OrderCompletedEvent.class);
-		verify(eventPublisher).publishEvent(eventCaptor.capture());
+		ArgumentCaptor<OutboxEvent> outboxCaptor = ArgumentCaptor.forClass(OutboxEvent.class);
+		verify(outboxEventRepository).save(outboxCaptor.capture());
 		assertThat(wallet.getBalance()).isEqualTo(7000L);
 		assertThat(historyCaptor.getValue().getType()).isEqualTo(PointHistoryType.USE);
 		assertThat(historyCaptor.getValue().getAmount()).isEqualTo(3000L);
 		assertThat(historyCaptor.getValue().getBalanceAfter()).isEqualTo(7000L);
 		assertThat(orderCaptor.getValue().getOrderedAt()).isEqualTo(orderedAt);
-		assertThat(eventCaptor.getValue()).isEqualTo(
-				new OrderCompletedEvent(3L, 1L, 2L, 3000L, orderedAt, "Asia/Seoul"));
+		assertThat(outboxCaptor.getValue().getAggregateId()).isEqualTo(3L);
+		assertThat(outboxCaptor.getValue().getPayload()).isEqualTo("payload");
 		assertThat(response.remainingBalance()).isEqualTo(7000L);
 		assertThat(response.orderedAt()).isEqualTo(LocalDateTime.of(2026, 7, 12, 12, 0));
 	}

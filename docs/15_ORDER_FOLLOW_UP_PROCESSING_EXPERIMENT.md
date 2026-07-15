@@ -248,3 +248,13 @@ ApplicationEventPublisher
 ```
 
 `AFTER_COMMIT`은 주문 Commit 성공 후에만 Listener를 실행하도록 보장한다. `@Async`는 Listener 실행 스레드를 분리하지만 전달 보장이나 재시도를 제공하지 않는다. `REQUIRES_NEW`는 별도 DB 트랜잭션 전파 방식일 뿐 외부 호출 전달 보장이나 요청 스레드 분리를 제공하지 않으므로 이 실험에는 적용하지 않았다.
+
+## Issue #46 Transactional Outbox 전환
+
+4단계 Async는 Executor 포화·서버 종료·외부 실패에서 메모리 작업이 유실될 수 있었다. 최종 production 경로는 Async Listener 대신 주문·포인트·USE 이력·Outbox `PENDING`을 같은 주문 트랜잭션으로 저장하고, 단일 인스턴스 `@Scheduled` Publisher가 DB의 PENDING을 조회해 외부 Client를 호출하도록 전환했다.
+
+성공 시 `SENT`와 `processedAt`, 실패 시 `retryCount`와 `lastError`를 기록하며 최대 재시도 도달 시 `FAILED`가 된다. 서버 종료 뒤에도 DB PENDING은 다음 Publisher 실행에서 다시 조회할 수 있다. 다만 외부 전송 성공 후 SENT 갱신 전 장애에서는 중복 전송될 수 있어 Exactly Once는 보장하지 않는다. Kafka·RabbitMQ, 멀티 인스턴스 선점, PROCESSING/SKIP LOCKED, 재시도 백오프는 제외한다.
+
+기존 Async 단계별 실험 기록은 학습 근거로 유지한다. Async 테스트 삭제는 테스트 통과 목적이 아니라 production 전송 경로를 Outbox 하나로 통일해 동일 주문의 중복 전송을 제거한 데 따른 정상적인 정리다.
+
+Outbox `eventId`는 주문 API 중복 요청을 막는 키가 아니라, 같은 Outbox 이벤트의 재시도 전달을 외부 Consumer가 식별하기 위한 키다. Publisher는 Entity와 JSON Payload의 동일 `eventId`를 Payload 전체와 함께 Client에 전달하며 재시도에서도 새 UUID를 만들지 않는다. Consumer는 이를 멱등성 키로 저장·검사해야 하지만, Consumer 저장소 구현은 이번 범위에서 제외한다. 따라서 현재 Producer 보장은 동일 이벤트를 같은 `eventId`로 전달하는 계약까지이며 Exactly Once는 보장하지 않는다.

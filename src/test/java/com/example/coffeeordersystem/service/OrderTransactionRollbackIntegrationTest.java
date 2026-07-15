@@ -5,12 +5,12 @@ import com.example.coffeeordersystem.domain.MenuStatus;
 import com.example.coffeeordersystem.domain.Order;
 import com.example.coffeeordersystem.domain.PointWallet;
 import com.example.coffeeordersystem.domain.User;
-import com.example.coffeeordersystem.event.OrderCompletedEventListener;
 import com.example.coffeeordersystem.repository.MenuRepository;
 import com.example.coffeeordersystem.repository.OrderRepository;
 import com.example.coffeeordersystem.repository.PointHistoryRepository;
 import com.example.coffeeordersystem.repository.PointWalletRepository;
 import com.example.coffeeordersystem.repository.UserRepository;
+import com.example.coffeeordersystem.repository.OutboxEventRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -21,14 +21,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
-import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
  * 실제 Spring 트랜잭션에서 주문 저장 실패 시 결제 변경이 롤백되는지 검증한다.
@@ -49,8 +47,8 @@ class OrderTransactionRollbackIntegrationTest {
 	@Autowired private PointWalletRepository pointWalletRepository;
 	@Autowired private PointHistoryRepository pointHistoryRepository;
 	@Autowired private JdbcTemplate jdbcTemplate;
+	@Autowired private OutboxEventRepository outboxEventRepository;
 	@MockitoBean private OrderRepository orderRepository;
-	@MockitoSpyBean private OrderCompletedEventListener orderCompletedEventListener;
 
 	private User user;
 	private PointWallet wallet;
@@ -91,10 +89,10 @@ class OrderTransactionRollbackIntegrationTest {
 		log.info("[WHEN] action=order throws=IllegalStateException elapsedMillis={} requestThread={}", elapsedMillis, requestThreadName);
 
 		// then
-		verifyNoInteractions(orderCompletedEventListener);
 		assertThat(orderCount()).isEqualTo(orderCountBefore);
 		assertThat(pointWalletRepository.findById(wallet.getId()).orElseThrow().getBalance()).isEqualTo(10000L);
 		assertThat(pointHistoryRepository.count()).isEqualTo(historyCountBefore);
+		assertThat(outboxEventRepository.count()).isZero();
 		log.info("[THEN] condition=주문 저장 예외 requestThread={} listenerThread=Event 발행 전 실패 clientThread=호출 전 실패 elapsedMillis={} orderCount={} balance={} useHistoryCount={}",
 				requestThreadName, elapsedMillis,
 				orderCount(), pointWalletRepository.findById(wallet.getId()).orElseThrow().getBalance(), pointHistoryRepository.count());

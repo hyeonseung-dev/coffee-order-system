@@ -3,19 +3,20 @@ package com.example.coffeeordersystem.service;
 import com.example.coffeeordersystem.domain.Menu;
 import com.example.coffeeordersystem.domain.MenuStatus;
 import com.example.coffeeordersystem.domain.Order;
+import com.example.coffeeordersystem.domain.OutboxEvent;
 import com.example.coffeeordersystem.domain.PointHistory;
 import com.example.coffeeordersystem.domain.PointWallet;
 import com.example.coffeeordersystem.domain.User;
 import com.example.coffeeordersystem.dto.OrderResponse;
-import com.example.coffeeordersystem.event.OrderCompletedEvent;
+import com.example.coffeeordersystem.event.OrderCompletedOutboxPayload;
 import com.example.coffeeordersystem.exception.BusinessException;
 import com.example.coffeeordersystem.exception.ErrorCode;
 import com.example.coffeeordersystem.repository.MenuRepository;
 import com.example.coffeeordersystem.repository.OrderRepository;
+import com.example.coffeeordersystem.repository.OutboxEventRepository;
 import com.example.coffeeordersystem.repository.PointHistoryRepository;
 import com.example.coffeeordersystem.repository.PointWalletRepository;
 import com.example.coffeeordersystem.repository.UserRepository;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +24,10 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
+import java.util.UUID;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * 메뉴 주문과 포인트 결제를 하나의 트랜잭션으로 처리하는 Service다.
@@ -39,18 +44,20 @@ public class OrderService {
 	private final PointWalletRepository pointWalletRepository;
 	private final PointHistoryRepository pointHistoryRepository;
 	private final OrderRepository orderRepository;
-	private final ApplicationEventPublisher eventPublisher;
+	private final OutboxEventRepository outboxEventRepository;
+	private final ObjectMapper objectMapper;
 	private final Clock clock;
 
 	public OrderService(UserRepository userRepository, MenuRepository menuRepository,
 			PointWalletRepository pointWalletRepository, PointHistoryRepository pointHistoryRepository,
-			OrderRepository orderRepository, ApplicationEventPublisher eventPublisher, Clock clock) {
+			OrderRepository orderRepository, OutboxEventRepository outboxEventRepository, ObjectMapper objectMapper, Clock clock) {
 		this.userRepository = userRepository;
 		this.menuRepository = menuRepository;
 		this.pointWalletRepository = pointWalletRepository;
 		this.pointHistoryRepository = pointHistoryRepository;
 		this.orderRepository = orderRepository;
-		this.eventPublisher = eventPublisher;
+		this.outboxEventRepository = outboxEventRepository;
+		this.objectMapper = objectMapper;
 		this.clock = clock;
 	}
 
@@ -81,11 +88,16 @@ public class OrderService {
 		wallet.debit(menu.getPrice());
 		pointHistoryRepository.save(PointHistory.use(user, menu.getPrice(), wallet.getBalance()));
 
-		Instant orderedAt = Instant.now(clock);
+		Instant orderedAt = Instant.now(clock).truncatedTo(ChronoUnit.MICROS);
 		Order savedOrder = orderRepository.save(Order.completed(user, menu, menu.getPrice(), orderedAt));
-		eventPublisher.publishEvent(new OrderCompletedEvent(
-				savedOrder.getId(), user.getId(), menu.getId(), savedOrder.getOrderPrice(),
-				savedOrder.getOrderedAt(), BUSINESS_ZONE.getId()));
+		String eventId = UUID.randomUUID().toString();
+		try {
+			String payload = objectMapper.writeValueAsString(new OrderCompletedOutboxPayload(eventId, "ORDER_COMPLETED",
+					savedOrder.getId(), user.getId(), menu.getId(), savedOrder.getOrderPrice(), savedOrder.getOrderedAt(), BUSINESS_ZONE.getId()));
+			outboxEventRepository.save(OutboxEvent.pending(eventId, "ORDER_COMPLETED", savedOrder.getId(), payload, orderedAt));
+		} catch (JsonProcessingException exception) {
+			throw new IllegalStateException("주문 완료 Outbox Payload 생성에 실패했습니다.", exception);
+		}
 
 		return new OrderResponse(savedOrder.getId(), user.getId(), menu.getId(), savedOrder.getOrderPrice(),
 				wallet.getBalance(), LocalDateTime.ofInstant(savedOrder.getOrderedAt(), BUSINESS_ZONE));

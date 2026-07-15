@@ -2,6 +2,24 @@
 
 AI 리뷰 결과와 반영 여부를 기록한다.
 
+## PR #48
+
+### 작업 내용
+
+Transactional Outbox 적용 및 `eventId` 기반 외부 멱등성 계약 검토
+
+### ChatGPT 리뷰
+
+| 항목 | 리뷰 내용 | 반영 여부 | 사유 |
+|---|---|---|---|
+| Outbox `eventId` 외부 전달 누락 | AI가 Entity와 Payload에 `eventId`를 추가했지만 Client 계약과 Publisher 호출에는 포함하지 않았다. Human이 PR 코드와 개념을 대조해 누락을 발견했다. | 반영 | Client가 Payload 전체를 받고 최초·재시도에서 동일 eventId를 Captor로 검증한다. Consumer 멱등 저장소는 제외한다. |
+| Contract Traceability 오판 | 필드 존재만 확인하고 DB 저장→역직렬화→Client 전달→재시도 동일성 전체 경로를 확인하지 않은 PASS 판정이었다. | 반영 | 이벤트 식별자는 최종 Consumer 전달까지 end-to-end 추적하고 재시도 동일성을 테스트한다. |
+
+### 최종 반영 결과
+
+- 재발 방지: DTO·Entity 필드 존재만으로 계약 구현을 판정하지 않고, 멱등성 키를 최종 전달 지점까지 추적한다. Producer 전달 계약과 Consumer 처리 책임을 분리한다.
+- Human이 발견한 오류이며 AI 자체 발견으로 바꾸지 않는다.
+
 ## PR #
 
 ### 작업 내용
