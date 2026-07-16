@@ -83,7 +83,7 @@ public class OrderService {
 			throw new BusinessException(ErrorCode.INACTIVE_MENU);
 		}
 
-		PointWallet wallet = pointWalletRepository.findByUser(user)
+		PointWallet wallet = pointWalletRepository.findByUserForUpdate(user)
 				.orElseThrow(() -> new BusinessException(ErrorCode.POINT_WALLET_NOT_FOUND));
 		wallet.debit(menu.getPrice());
 		pointHistoryRepository.save(PointHistory.use(user, menu.getPrice(), wallet.getBalance()));

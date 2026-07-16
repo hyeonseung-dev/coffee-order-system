@@ -51,7 +51,7 @@ public class PointChargeService {
 	public PointChargeResponse charge(Long userId, Long amount) {
 		User user = userRepository.findById(userId)
 				.orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-		PointWallet wallet = pointWalletRepository.findByUser(user)
+		PointWallet wallet = pointWalletRepository.findByUserForUpdate(user)
 				.orElseThrow(() -> new BusinessException(ErrorCode.POINT_WALLET_NOT_FOUND));
 
 		wallet.charge(amount);
