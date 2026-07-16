@@ -37,5 +37,17 @@ dependencies {
 }
 
 tasks.named('test') {
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags 'concurrency'
+    }
+}
+
+tasks.register('concurrencyTest', Test) {
+    description = 'Runs the MySQL-backed concurrent order reproduction tests.'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform {
+        includeTags 'concurrency'
+    }
 }

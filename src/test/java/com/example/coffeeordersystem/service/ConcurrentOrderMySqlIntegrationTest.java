@@ -1,0 +1,223 @@
+package com.example.coffeeordersystem.service;
+
+import com.example.coffeeordersystem.domain.Menu;
+import com.example.coffeeordersystem.domain.MenuStatus;
+import com.example.coffeeordersystem.domain.PointHistoryType;
+import com.example.coffeeordersystem.domain.PointWallet;
+import com.example.coffeeordersystem.domain.User;
+import com.example.coffeeordersystem.repository.MenuRepository;
+import com.example.coffeeordersystem.repository.PointWalletRepository;
+import com.example.coffeeordersystem.repository.UserRepository;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+/**
+ * MySQL에서 락 미적용 주문의 동시성 결과를 관찰하는 비결정적 재현 테스트다.
+ *
+ * 기본 test task에는 포함하지 않는다. 각 실행 결과는 로그로 남기며, 정합성 위반이
+ * 관찰되지 않아도 테스트 자체는 실패하지 않는다. #11에서 같은 조건으로 락 적용 전후를 비교한다.
+ */
+@Tag("concurrency")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ActiveProfiles("concurrency")
+class ConcurrentOrderMySqlIntegrationTest {
+
+    private static final Logger log = LoggerFactory.getLogger(ConcurrentOrderMySqlIntegrationTest.class);
+    private static final int CONCURRENT_REQUESTS = 10;
+    private static final int SERVICE_ATTEMPTS = 10;
+    private static final long INITIAL_BALANCE = 10_000L;
+    private static final long MENU_PRICE = 3_000L;
+    private static final long TIMEOUT_SECONDS = 30L;
+    private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
+
+    @Autowired private OrderService orderService;
+    @Autowired private UserRepository userRepository;
+    @Autowired private MenuRepository menuRepository;
+    @Autowired private PointWalletRepository pointWalletRepository;
+    @Autowired private JdbcTemplate jdbcTemplate;
+    @LocalServerPort private int port;
+
+    private final List<Fixture> fixtures = new ArrayList<>();
+
+    @AfterEach
+    void tearDown() {
+        fixtures.forEach(this::deleteFixture);
+        fixtures.clear();
+    }
+
+    @Test
+    void 동일_사용자_동시_주문_Service_결과를_10회_기록한다() throws Exception {
+        List<Observation> observations = new ArrayList<>();
+
+        for (int attempt = 1; attempt <= SERVICE_ATTEMPTS; attempt++) {
+            Fixture fixture = createFixture("service-" + attempt);
+            Observation observation = runConcurrently(
+                    () -> {
+                        orderService.order(fixture.userId(), fixture.menuId());
+                        return Outcome.successful();
+                    },
+                    fixture
+            );
+            observations.add(observation);
+            logObservation("service", attempt, observation);
+        }
+
+        assertThat(observations).hasSize(SERVICE_ATTEMPTS);
+        assertThat(observations).allSatisfy(observation ->
+                assertThat(observation.successCount() + observation.failureCount()).isEqualTo(CONCURRENT_REQUESTS));
+    }
+
+    @Test
+    void 동일_사용자_동시_주문_API_보조_시나리오_결과를_기록한다() throws Exception {
+        Fixture fixture = createFixture("api");
+
+        Observation observation = runConcurrently(
+                () -> {
+                    int statusCode = postOrder(fixture);
+                    return statusCode >= 200 && statusCode < 300
+                            ? Outcome.successful()
+                            : Outcome.failure("HTTP_" + statusCode);
+                },
+                fixture
+        );
+
+        logObservation("api", 1, observation);
+        assertThat(observation.successCount() + observation.failureCount()).isEqualTo(CONCURRENT_REQUESTS);
+    }
+
+    private Fixture createFixture(String scenario) {
+        String suffix = UUID.randomUUID().toString();
+        User user = userRepository.save(User.create("concurrency-" + scenario + "-" + suffix));
+        PointWallet wallet = pointWalletRepository.save(PointWallet.create(user, INITIAL_BALANCE));
+        Menu menu = menuRepository.save(Menu.create("concurrency-menu-" + suffix, MENU_PRICE, MenuStatus.ACTIVE));
+        Fixture fixture = new Fixture(user.getId(), wallet.getId(), menu.getId());
+        fixtures.add(fixture);
+        return fixture;
+    }
+
+    private int postOrder(Fixture fixture) throws Exception {
+        String requestBody = "{\"userId\":" + fixture.userId() + ",\"menuId\":" + fixture.menuId() + "}";
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/orders"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+                .build();
+        return HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.discarding()).statusCode();
+    }
+
+    private Observation runConcurrently(Callable<Outcome> request, Fixture fixture) throws Exception {
+        ExecutorService executor = Executors.newFixedThreadPool(CONCURRENT_REQUESTS);
+        CountDownLatch ready = new CountDownLatch(CONCURRENT_REQUESTS);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<Outcome>> futures = new ArrayList<>();
+            for (int index = 0; index < CONCURRENT_REQUESTS; index++) {
+                futures.add(executor.submit(() -> {
+                    ready.countDown();
+                    if (!start.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                        return Outcome.failure("START_TIMEOUT");
+                    }
+                    try {
+                        return request.call();
+                    } catch (Exception exception) {
+                        return Outcome.failure(exception.getClass().getSimpleName());
+                    }
+                }));
+            }
+
+            assertThat(ready.await(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            List<Outcome> outcomes = new ArrayList<>();
+            for (Future<Outcome> future : futures) {
+                outcomes.add(future.get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+            }
+            return observe(outcomes, fixture);
+        } finally {
+            executor.shutdownNow();
+            assertThat(executor.awaitTermination(TIMEOUT_SECONDS, TimeUnit.SECONDS)).isTrue();
+        }
+    }
+
+    private Observation observe(List<Outcome> outcomes, Fixture fixture) {
+        long successCount = outcomes.stream().filter(Outcome::success).count();
+        long failureCount = outcomes.size() - successCount;
+        long orderCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM orders WHERE user_id = ?", Long.class, fixture.userId());
+        long useHistoryCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM point_history WHERE user_id = ? AND type = ?",
+                Long.class, fixture.userId(), PointHistoryType.USE.name());
+        long balance = pointWalletRepository.findById(fixture.walletId()).orElseThrow().getBalance();
+        List<String> violations = new ArrayList<>();
+        if (successCount != orderCount || successCount != useHistoryCount) {
+            violations.add("REQUEST_ORDER_HISTORY_MISMATCH");
+        }
+        if (balance != INITIAL_BALANCE - (MENU_PRICE * successCount)) {
+            violations.add("LOST_UPDATE_OR_BALANCE_MISMATCH");
+        }
+        if (successCount > INITIAL_BALANCE / MENU_PRICE) {
+            violations.add("EXCESS_SUCCESS_ORDER");
+        }
+        Map<String, Long> failureTypes = outcomes.stream()
+                .filter(outcome -> !outcome.success())
+                .collect(Collectors.groupingBy(Outcome::reason, Collectors.counting()));
+        return new Observation(successCount, failureCount, orderCount, useHistoryCount, balance, failureTypes, violations);
+    }
+
+    private void logObservation(String testType, int attempt, Observation observation) {
+        log.info("[CONCURRENCY_OBSERVATION] type={} attempt={} success={} failure={} failureTypes={} orders={} useHistories={} balance={} consistencyViolation={}",
+                testType, attempt, observation.successCount(), observation.failureCount(), observation.failureTypes(),
+                observation.orderCount(), observation.useHistoryCount(), observation.balance(), observation.violations());
+    }
+
+    private void deleteFixture(Fixture fixture) {
+        jdbcTemplate.update("DELETE FROM outbox_events WHERE aggregate_id IN (SELECT id FROM orders WHERE user_id = ?)", fixture.userId());
+        jdbcTemplate.update("DELETE FROM orders WHERE user_id = ?", fixture.userId());
+        jdbcTemplate.update("DELETE FROM point_history WHERE user_id = ?", fixture.userId());
+        pointWalletRepository.deleteById(fixture.walletId());
+        menuRepository.deleteById(fixture.menuId());
+        userRepository.deleteById(fixture.userId());
+    }
+
+    private record Fixture(Long userId, Long walletId, Long menuId) {
+    }
+
+    private record Outcome(boolean success, String reason) {
+        static Outcome successful() {
+            return new Outcome(true, null);
+        }
+
+        static Outcome failure(String reason) {
+            return new Outcome(false, reason);
+        }
+    }
+
+    private record Observation(long successCount, long failureCount, long orderCount, long useHistoryCount,
+                               long balance, Map<String, Long> failureTypes, List<String> violations) {
+    }
+}

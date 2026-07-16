@@ -65,6 +65,64 @@
 
 ---
 
+### Issue #10 — [v1][test] 동시 주문 시 포인트 정합성 문제 재현
+
+- 검증 시각: 2026-07-16 Asia/Seoul
+- 기준 브랜치: develop
+- 작업 브랜치: `codex/issue-10-concurrent-order-point-consistency`
+- Attempt: 1/1
+- 위험도: MEDIUM
+- 실행 주체: coffee-order-issue-loop Implementer / Verify
+- 최종 상태: PASS
+
+#### 실행 조건
+
+- Docker MySQL 8.4 컨테이너가 `healthy`, 호스트 포트 `3307`으로 실행 중인 상태에서 수행했다.
+- 로컬 `.env`를 현재 셸에만 로드하고, Compose 변수 `MYSQL_USER`·`MYSQL_PASSWORD`를 애플리케이션 설정이 요구하는 `DB_USERNAME`·`DB_PASSWORD`로 현재 Gradle 프로세스에만 매핑했다.
+- 자격 증명 값과 `.env` 파일 내용은 출력·기록·변경하지 않았다.
+- `ConcurrentOrderMySqlIntegrationTest`는 실제 MySQL, 각 요청의 별도 Service 트랜잭션, 10개 스레드, 시작 `CountDownLatch`, 작업별 30초 제한을 사용한다.
+
+#### 동시성 관찰 결과
+
+| 구분 | 회차 | 성공 | 실패·예외 | 주문 | USE 이력 | 최종 잔액 | 정합성 위반 유형 |
+| --- | ---: | ---: | --- | ---: | ---: | ---: | --- |
+| Service | 1 | 10 | 0 / 없음 | 10 | 10 | 7,000 | `LOST_UPDATE_OR_BALANCE_MISMATCH`, `EXCESS_SUCCESS_ORDER` |
+| Service | 2 | 10 | 0 / 없음 | 10 | 10 | 7,000 | `LOST_UPDATE_OR_BALANCE_MISMATCH`, `EXCESS_SUCCESS_ORDER` |
+| Service | 3 | 10 | 0 / 없음 | 10 | 10 | 7,000 | `LOST_UPDATE_OR_BALANCE_MISMATCH`, `EXCESS_SUCCESS_ORDER` |
+| Service | 4 | 10 | 0 / 없음 | 10 | 10 | 7,000 | `LOST_UPDATE_OR_BALANCE_MISMATCH`, `EXCESS_SUCCESS_ORDER` |
+| Service | 5 | 10 | 0 / 없음 | 10 | 10 | 7,000 | `LOST_UPDATE_OR_BALANCE_MISMATCH`, `EXCESS_SUCCESS_ORDER` |
+| Service | 6 | 10 | 0 / 없음 | 10 | 10 | 7,000 | `LOST_UPDATE_OR_BALANCE_MISMATCH`, `EXCESS_SUCCESS_ORDER` |
+| Service | 7 | 10 | 0 / 없음 | 10 | 10 | 7,000 | `LOST_UPDATE_OR_BALANCE_MISMATCH`, `EXCESS_SUCCESS_ORDER` |
+| Service | 8 | 10 | 0 / 없음 | 10 | 10 | 7,000 | `LOST_UPDATE_OR_BALANCE_MISMATCH`, `EXCESS_SUCCESS_ORDER` |
+| Service | 9 | 10 | 0 / 없음 | 10 | 10 | 7,000 | `LOST_UPDATE_OR_BALANCE_MISMATCH`, `EXCESS_SUCCESS_ORDER` |
+| Service | 10 | 10 | 0 / 없음 | 10 | 10 | 4,000 | `LOST_UPDATE_OR_BALANCE_MISMATCH`, `EXCESS_SUCCESS_ORDER` |
+| API 보조 | 1 | 10 | 0 / 없음 | 10 | 10 | 7,000 | `LOST_UPDATE_OR_BALANCE_MISMATCH`, `EXCESS_SUCCESS_ORDER` |
+
+- 1차 10회 안에 모든 Service 회차에서 위반이 관찰됐으므로 30회 확대는 계약에 따라 수행하지 않았다.
+- Service와 API 보조 시나리오 모두 10건의 요청·주문·USE 이력은 일치했다. 그러나 초기 10,000P에서 3,000P 주문이 10건 모두 성공해 성공 요청 수가 최대 3건을 초과했고, 최종 잔액도 성공 요청 수 기준 기대값과 불일치했다.
+- API 보조 시나리오는 HTTP 요청·서버 요청 스레드·HTTP 클라이언트를 추가로 경유한다. 이번 실행에서는 Service 시나리오와 같은 위반 유형이 관찰됐으나, HTTP·서버·커넥션 풀 조건이 추가되므로 두 결과를 동일한 성능 측정값으로 해석하지 않는다.
+
+#### 실행한 검증
+
+| 구분 | 명령 | 결과 | 핵심 근거 |
+| --- | --- | --- | --- |
+| 실제 MySQL 동시성 테스트 | `source .env` 후 현재 셸에 DB 변수 매핑, `./gradlew concurrencyTest --no-daemon` | PASS | Service 10회와 API 보조 1회가 실제 MySQL에서 완료되고 위 표의 정합성 위반을 기록 |
+| 전체 테스트·빌드 | `./gradlew test build --no-daemon` | PASS | `concurrency` 태그는 기본 테스트에서 분리된 상태로 전체 H2 테스트와 빌드 통과 |
+| DB 컨테이너 상태 | `docker compose ps` | PASS | MySQL 8.4 healthy |
+
+#### 미검증 항목
+
+- 실제 다중 애플리케이션 인스턴스, 운영 트래픽, 네트워크 장애, 잠금 대기·데드락은 검증하지 않았다.
+- 비관적 락 적용 후의 정합성 회복은 Issue #11 범위다.
+
+#### 증거
+
+- 테스트 리포트: `build/test-results/concurrencyTest/TEST-com.example.coffeeordersystem.service.ConcurrentOrderMySqlIntegrationTest.xml`
+- 빌드 결과: `./gradlew test build --no-daemon` 성공
+- 기타: `CONCURRENCY_OBSERVATION` 로그 11건
+
+---
+
 ### Issue #8 — [v0][feat] 커피 주문·결제 API 구현
 
 - 검증 시각: 2026-07-12 Asia/Seoul
