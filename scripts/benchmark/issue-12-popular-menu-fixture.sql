@@ -26,6 +26,7 @@ FROM (
     UNION ALL SELECT 16 UNION ALL SELECT 17 UNION ALL SELECT 18 UNION ALL SELECT 19 UNION ALL SELECT 20
 ) AS menu_numbers;
 
+DROP TEMPORARY TABLE IF EXISTS benchmark_menu_ids;
 CREATE TEMPORARY TABLE benchmark_menu_ids AS
 SELECT id, CAST(SUBSTRING_INDEX(name, '-', -1) AS UNSIGNED) AS sequence_number
 FROM menu
@@ -49,10 +50,20 @@ SELECT @fixture_user_id,
             ELSE @from_inclusive - INTERVAL (1 + (numbers.n % 365)) DAY
        END
 FROM sequence_numbers numbers
-JOIN benchmark_menu_ids menus ON menus.sequence_number = (numbers.n % 20) + 1
+JOIN benchmark_menu_ids menus ON menus.sequence_number = (FLOOR(numbers.n / 10) % 20) + 1
 WHERE numbers.n < 500000;
 
 ANALYZE TABLE orders;
+
+-- 각 메뉴가 전체 25,000건, 최근 7일 2,500건인지 직접 확인한다.
+SELECT menus.sequence_number,
+       COUNT(orders.id) AS total_order_count,
+       SUM(orders.ordered_at >= @from_inclusive AND orders.ordered_at < @to_exclusive) AS recent_order_count
+FROM benchmark_menu_ids menus
+LEFT JOIN orders ON orders.menu_id = menus.id
+    AND orders.user_id = @fixture_user_id
+GROUP BY menus.sequence_number
+ORDER BY menus.sequence_number;
 
 -- Hibernate JPQL과 동등한 측정 SQL. :fromInclusive=2026-07-08T15:00:00Z, :toExclusive=2026-07-15T15:00:00Z
 SELECT m.id AS menu_id, m.name, COUNT(o.id) AS order_count

@@ -2,7 +2,7 @@
 
 ## 결론
 
-`orders(menu_id, status, ordered_at)`를 최종 인덱스로 선택한다. 실제 JPQL은 ACTIVE 메뉴에서 시작해 `orders`를 LEFT JOIN하므로, `menu_id` 선두 인덱스가 조인 경로와 맞는다. 후보 B의 측정 중앙값은 기준선보다 낮았고, 후보 A는 실행 계획과 측정값 모두 기준선과 유의미하게 다르지 않았다.
+`orders(menu_id, status, ordered_at)`를 최종 인덱스로 선택한다. 실제 JPQL은 ACTIVE 메뉴에서 시작해 `orders`를 LEFT JOIN하므로, `menu_id` 선두 인덱스가 조인 경로와 맞는다. 후보 B의 측정 중앙값은 기준선보다 약 65.0% 낮았고, 후보 A는 실행 계획과 측정값 모두 기준선과 유의미하게 다르지 않았다.
 
 이 결과는 로컬 Docker MySQL 8.4 단일 컨테이너에서의 DB 쿼리 측정이다. HTTP 응답시간·처리량·p95는 이 문서의 결론에 포함하지 않으며 #45에서 검증한다.
 
@@ -32,9 +32,12 @@ FETCH FIRST ? ROWS ONLY
 - MySQL Docker 이미지: 8.4
 - 주문: 500,000건, 메뉴: 20개(그중 ACTIVE 15개)
 - 주문 분포: 최근 7일 약 10%, 이전 약 90%, 상태는 모두 `COMPLETED`
+- 최근 여부는 `n % 10`, 메뉴 배정은 `FLOOR(n / 10) % 20`으로 계산해 두 분포가 같은 나머지 연산에 결합되지 않게 했다.
+- fixture 실행 후 메뉴별 전체 주문 수와 최근 주문 수를 직접 집계했다. 20개 메뉴 모두 전체 25,000건, 최근 7일 2,500건으로 확인됐다.
 - 각 조건: 인덱스 생성 또는 제거 → `ANALYZE TABLE orders` → 워밍업 3회 → `EXPLAIN ANALYZE` 측정 5회
 - 대표값: 최상단 Limit 노드의 actual end time 중앙값
 - fixture는 `issue-12-benchmark-` 접두사로 분리했고 측정 후 주문·메뉴·사용자 데이터를 제거했다.
+- 같은 MySQL 세션에서 fixture를 연속 두 번 실행해 임시 테이블 재생성과 동일한 분포를 확인했다.
 
 ## 현재 인덱스 기준선
 
@@ -52,11 +55,11 @@ ALTER TABLE orders ADD INDEX idx_orders_menu_status_ordered_at (menu_id, status,
 
 | 조건 | 측정 5회(ms) | 중앙값(ms) | EXPLAIN ANALYZE 요약 |
 |---|---:|---:|---|
-| 기준선: `menu_id` | 196, 195, 200, 193, 202 | 196.0 | `menu_id` index lookup 후 상태·기간 filter, 메뉴별 약 18,751행 접근, 임시 집계·정렬 |
-| 후보 A: `(ordered_at, menu_id)` | 192, 223, 192, 195, 196 | 195.0 | 기존 `menu_id` 인덱스를 계속 사용, 실행 계획 변화 없음 |
-| 후보 B: `(menu_id, status, ordered_at)` | 79.9, 87.6, 84.2, 82.6, 106.0 | 84.2 | 후보 B의 covering index lookup 사용, 임시 집계·정렬은 유지 |
+| 기준선: `menu_id` | 184, 181, 179, 179, 177 | 179.0 | `menu_id` index lookup 후 상태·기간 filter, 메뉴별 약 18,751행 접근, 임시 집계·정렬 |
+| 후보 A: `(ordered_at, menu_id)` | 177, 179, 177, 177, 179 | 177.0 | 기존 `menu_id` 인덱스를 계속 사용, 실행 계획 변화 없음 |
+| 후보 B: `(menu_id, status, ordered_at)` | 62.7, 62.9, 62.5, 62.4, 62.6 | 62.6 | 후보 B의 covering index lookup 사용, 임시 집계·정렬은 유지 |
 
-후보 B의 중앙값은 기준선 대비 약 57.0% 낮았다. `GROUP BY`, `COUNT`, 정렬 때문에 집계용 임시 테이블과 TOP 3 정렬 비용은 남는다.
+후보 B의 중앙값은 기준선 대비 약 65.0% 낮았다. 후보 B도 메뉴별 약 18,751개 인덱스 항목을 읽은 뒤 상태·기간 조건에 맞는 평균 약 1,876행을 집계했으며, `GROUP BY`, `COUNT`, 정렬 때문에 집계용 임시 테이블과 TOP 3 정렬 비용은 남는다.
 
 ## 저장 공간과 쓰기 비용
 
