@@ -53,11 +53,27 @@ Issue #12에서 최근 7일 인기 메뉴 조회 쿼리의 인덱스를 실제 M
 - 인덱스 크기
 - 더 적은 컬럼으로 동일한 효과를 내는지
 
+## 후속 검증 결과
+
+동일한 전용 benchmark 스키마와 50만 건 `COMPLETED` fixture에서 기준선·후보 A·B·C·D를 각각 새 스키마에서 측정했다. 각 조건은 `ANALYZE TABLE`, 워밍업 3회, `EXPLAIN ANALYZE` 5회 순서로 실행했다.
+
+| 조건 | 중앙값 | 인덱스 크기 | covering | 실제 lookup key |
+|---|---:|---:|---|---|
+| 기준선 `(menu_id)` | 179.0ms | 24,215,552 bytes | 아니오 | `menu_id` |
+| 후보 A `(ordered_at, menu_id)` | 184.0ms | 41,566,208 bytes | 아니오 | 기존 `menu_id` |
+| 후보 B `(menu_id, status, ordered_at)` | 71.5ms | 29,458,432 bytes | 예 | `menu_id`, `status` |
+| 후보 C `(menu_id, ordered_at)` | 202.0ms | 28,409,856 bytes | 아니오 | `menu_id` |
+| 후보 D `(menu_id, ordered_at, status)` | 66.0ms | 29,458,432 bytes | 예 | `menu_id` |
+
+- 모든 조건은 메뉴별 25,000행 × ACTIVE 메뉴 15개를 읽었다. 날짜 범위는 B·C·D 어느 후보에서도 실제 lookup key로 사용되지 않았다.
+- 현재 모든 주문이 `COMPLETED`이므로 `status`는 선택도를 제공하지 않는다. 후보 C는 더 작지만 `status`가 없어 covering을 잃고 더 느렸다.
+- B와 D는 같은 컬럼 수·크기이며 모두 covering이다. 이번 5회 중앙값이 더 낮은 후보 D를 최종 인덱스로 선택했다.
+
 ## 현재 판정
 
-- 후보 B의 성능 개선 측정 자체는 유효하다.
-- 그러나 후보 C를 비교하지 않았으므로 후보 B를 최소·최적 인덱스라고 확정할 근거는 아직 부족하다.
-- 후속 측정 완료 전까지 최종 인덱스 선택과 관련 Contract Traceability는 재검토 대상이다.
+- Human이 지적한 최소 후보 검증 공백은 후보 C·D 비교로 해소됐다.
+- 최종 선택은 `orders(menu_id, ordered_at, status)`이며, Contract Traceability의 후보 비교와 최종 인덱스 항목은 최신 측정 증거로 갱신했다.
+- 향후 실패·취소 주문도 저장하도록 도메인이 바뀌면 상태 분포가 달라지므로 별도 benchmark에서 다시 검증한다.
 
 ## 재발 방지
 
