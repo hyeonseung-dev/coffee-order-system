@@ -59,7 +59,7 @@ class OrderServiceTest {
 		PointWallet wallet = PointWallet.create(user, 10000L);
 		when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 		when(menuRepository.findById(2L)).thenReturn(Optional.of(menu));
-		when(pointWalletRepository.findByUser(user)).thenReturn(Optional.of(wallet));
+		when(pointWalletRepository.findByUserForUpdate(user)).thenReturn(Optional.of(wallet));
 		Instant orderedAt = Instant.parse("2026-07-12T03:00:00Z");
 		fixedClock(orderedAt);
 		when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
@@ -97,7 +97,7 @@ class OrderServiceTest {
 		assertThatThrownBy(() -> orderService.order(1L, 2L))
 				.isInstanceOfSatisfying(BusinessException.class,
 						exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.INACTIVE_MENU));
-		verify(pointWalletRepository, never()).findByUser(any());
+		verify(pointWalletRepository, never()).findByUserForUpdate(any());
 		verify(pointHistoryRepository, never()).save(any());
 		verify(orderRepository, never()).save(any());
 	}
@@ -109,7 +109,7 @@ class OrderServiceTest {
 		PointWallet wallet = PointWallet.create(user, 2999L);
 		when(userRepository.findById(1L)).thenReturn(Optional.of(user));
 		when(menuRepository.findById(2L)).thenReturn(Optional.of(menu));
-		when(pointWalletRepository.findByUser(user)).thenReturn(Optional.of(wallet));
+		when(pointWalletRepository.findByUserForUpdate(user)).thenReturn(Optional.of(wallet));
 
 		assertThatThrownBy(() -> orderService.order(1L, 2L))
 				.isInstanceOfSatisfying(BusinessException.class,

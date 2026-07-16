@@ -4,6 +4,6 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @Configuration
-@Profile("!test")
+@Profile("!test & !concurrency")
 @EnableScheduling
 public class OutboxSchedulingConfig {}

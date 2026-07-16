@@ -5,6 +5,8 @@ import com.example.coffeeordersystem.domain.MenuStatus;
 import com.example.coffeeordersystem.domain.PointHistoryType;
 import com.example.coffeeordersystem.domain.PointWallet;
 import com.example.coffeeordersystem.domain.User;
+import com.example.coffeeordersystem.exception.BusinessException;
+import com.example.coffeeordersystem.exception.ErrorCode;
 import com.example.coffeeordersystem.repository.MenuRepository;
 import com.example.coffeeordersystem.repository.PointWalletRepository;
 import com.example.coffeeordersystem.repository.UserRepository;
@@ -38,10 +40,10 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * MySQL에서 락 미적용 주문의 동시성 결과를 관찰하는 비결정적 재현 테스트다.
+ * MySQL에서 지갑 행 잠금이 동일 사용자 주문을 직렬화하는지 검증한다.
  *
- * 기본 test task에는 포함하지 않는다. 각 실행 결과는 로그로 남기며, 정합성 위반이
- * 관찰되지 않아도 테스트 자체는 실패하지 않는다. #11에서 같은 조건으로 락 적용 전후를 비교한다.
+ * 기본 test task에는 포함하지 않는다. #10과 동일한 시작 동기화 조건으로 성공·실패·잔액·이력을
+ * 강제 검증한다.
  */
 @Tag("concurrency")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -72,43 +74,49 @@ class ConcurrentOrderMySqlIntegrationTest {
     }
 
     @Test
-    void 동일_사용자_동시_주문_Service_결과를_10회_기록한다() throws Exception {
+    void 동일_사용자_동시_주문_Service는_10회_모두_정합성을_보장한다() throws Exception {
         List<Observation> observations = new ArrayList<>();
 
         for (int attempt = 1; attempt <= SERVICE_ATTEMPTS; attempt++) {
             Fixture fixture = createFixture("service-" + attempt);
             Observation observation = runConcurrently(
                     () -> {
-                        orderService.order(fixture.userId(), fixture.menuId());
-                        return Outcome.successful();
+                        try {
+                            orderService.order(fixture.userId(), fixture.menuId());
+                            return Outcome.successful();
+                        } catch (BusinessException exception) {
+                            return Outcome.failure(exception.getErrorCode().name());
+                        }
                     },
                     fixture
             );
             observations.add(observation);
             logObservation("service", attempt, observation);
+            assertExpectedResult(observation);
         }
 
         assertThat(observations).hasSize(SERVICE_ATTEMPTS);
-        assertThat(observations).allSatisfy(observation ->
-                assertThat(observation.successCount() + observation.failureCount()).isEqualTo(CONCURRENT_REQUESTS));
     }
 
     @Test
-    void 동일_사용자_동시_주문_API_보조_시나리오_결과를_기록한다() throws Exception {
+    void 동일_사용자_동시_주문_API_보조_시나리오도_정합성을_보장한다() throws Exception {
         Fixture fixture = createFixture("api");
 
         Observation observation = runConcurrently(
                 () -> {
-                    int statusCode = postOrder(fixture);
-                    return statusCode >= 200 && statusCode < 300
+                    HttpResponse<String> response = postOrder(fixture);
+                    return response.statusCode() >= 200 && response.statusCode() < 300
                             ? Outcome.successful()
-                            : Outcome.failure("HTTP_" + statusCode);
+                            : Outcome.apiFailure(response.statusCode(), response.body().contains("\"code\":\"INSUFFICIENT_POINT\"")
+                                    ? ErrorCode.INSUFFICIENT_POINT.name()
+                                    : "HTTP_" + response.statusCode());
                 },
                 fixture
         );
 
         logObservation("api", 1, observation);
-        assertThat(observation.successCount() + observation.failureCount()).isEqualTo(CONCURRENT_REQUESTS);
+        assertExpectedResult(observation);
+        assertThat(observation.failureStatusCodes()).containsOnly(Map.entry(400, 7L));
     }
 
     private Fixture createFixture(String scenario) {
@@ -121,13 +129,13 @@ class ConcurrentOrderMySqlIntegrationTest {
         return fixture;
     }
 
-    private int postOrder(Fixture fixture) throws Exception {
+    private HttpResponse<String> postOrder(Fixture fixture) throws Exception {
         String requestBody = "{\"userId\":" + fixture.userId() + ",\"menuId\":" + fixture.menuId() + "}";
         HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/orders"))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(requestBody))
                 .build();
-        return HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.discarding()).statusCode();
+        return HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
     }
 
     private Observation runConcurrently(Callable<Outcome> request, Fixture fixture) throws Exception {
@@ -186,13 +194,27 @@ class ConcurrentOrderMySqlIntegrationTest {
         Map<String, Long> failureTypes = outcomes.stream()
                 .filter(outcome -> !outcome.success())
                 .collect(Collectors.groupingBy(Outcome::reason, Collectors.counting()));
-        return new Observation(successCount, failureCount, orderCount, useHistoryCount, balance, failureTypes, violations);
+        Map<Integer, Long> failureStatusCodes = outcomes.stream()
+                .filter(outcome -> !outcome.success() && outcome.statusCode() != null)
+                .collect(Collectors.groupingBy(Outcome::statusCode, Collectors.counting()));
+        return new Observation(successCount, failureCount, orderCount, useHistoryCount, balance, failureTypes,
+                failureStatusCodes, violations);
     }
 
     private void logObservation(String testType, int attempt, Observation observation) {
         log.info("[CONCURRENCY_OBSERVATION] type={} attempt={} success={} failure={} failureTypes={} orders={} useHistories={} balance={} consistencyViolation={}",
                 testType, attempt, observation.successCount(), observation.failureCount(), observation.failureTypes(),
                 observation.orderCount(), observation.useHistoryCount(), observation.balance(), observation.violations());
+    }
+
+    private void assertExpectedResult(Observation observation) {
+        assertThat(observation.successCount()).isEqualTo(3L);
+        assertThat(observation.failureCount()).isEqualTo(7L);
+        assertThat(observation.failureTypes()).containsOnly(Map.entry(ErrorCode.INSUFFICIENT_POINT.name(), 7L));
+        assertThat(observation.orderCount()).isEqualTo(3L);
+        assertThat(observation.useHistoryCount()).isEqualTo(3L);
+        assertThat(observation.balance()).isEqualTo(1_000L);
+        assertThat(observation.violations()).isEmpty();
     }
 
     private void deleteFixture(Fixture fixture) {
@@ -207,17 +229,22 @@ class ConcurrentOrderMySqlIntegrationTest {
     private record Fixture(Long userId, Long walletId, Long menuId) {
     }
 
-    private record Outcome(boolean success, String reason) {
+    private record Outcome(boolean success, Integer statusCode, String reason) {
         static Outcome successful() {
-            return new Outcome(true, null);
+            return new Outcome(true, null, null);
         }
 
         static Outcome failure(String reason) {
-            return new Outcome(false, reason);
+            return new Outcome(false, null, reason);
+        }
+
+        static Outcome apiFailure(int statusCode, String reason) {
+            return new Outcome(false, statusCode, reason);
         }
     }
 
     private record Observation(long successCount, long failureCount, long orderCount, long useHistoryCount,
-                               long balance, Map<String, Long> failureTypes, List<String> violations) {
+                               long balance, Map<String, Long> failureTypes, Map<Integer, Long> failureStatusCodes,
+                               List<String> violations) {
     }
 }

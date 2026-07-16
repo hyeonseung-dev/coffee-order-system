@@ -52,7 +52,7 @@ class PointChargeServiceTest {
 		User user = user(1L, "테스트사용자");
 		PointWallet wallet = PointWallet.create(user, 1000L);
 		when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-		when(pointWalletRepository.findByUser(user)).thenReturn(Optional.of(wallet));
+		when(pointWalletRepository.findByUserForUpdate(user)).thenReturn(Optional.of(wallet));
 
 		// when
 		PointChargeResponse response = pointChargeService.charge(1L, 10000L);
@@ -69,7 +69,7 @@ class PointChargeServiceTest {
 		PointWallet wallet = PointWallet.create(user, 1000L);
 		ArgumentCaptor<PointHistory> historyCaptor = ArgumentCaptor.forClass(PointHistory.class);
 		when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-		when(pointWalletRepository.findByUser(user)).thenReturn(Optional.of(wallet));
+		when(pointWalletRepository.findByUserForUpdate(user)).thenReturn(Optional.of(wallet));
 
 		// when
 		pointChargeService.charge(1L, 10000L);
@@ -89,7 +89,7 @@ class PointChargeServiceTest {
 		User user = user(1L, "테스트사용자");
 		PointWallet wallet = PointWallet.create(user, 1000L);
 		when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-		when(pointWalletRepository.findByUser(user)).thenReturn(Optional.of(wallet));
+		when(pointWalletRepository.findByUserForUpdate(user)).thenReturn(Optional.of(wallet));
 
 		// when & then
 		assertThatThrownBy(() -> pointChargeService.charge(1L, 0L))
@@ -106,7 +106,7 @@ class PointChargeServiceTest {
 		User user = user(1L, "테스트사용자");
 		PointWallet wallet = PointWallet.create(user, 1000L);
 		when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-		when(pointWalletRepository.findByUser(user)).thenReturn(Optional.of(wallet));
+		when(pointWalletRepository.findByUserForUpdate(user)).thenReturn(Optional.of(wallet));
 
 		// when & then
 		assertThatThrownBy(() -> pointChargeService.charge(1L, -1000L))
@@ -127,7 +127,7 @@ class PointChargeServiceTest {
 				.isInstanceOfSatisfying(BusinessException.class,
 						exception -> assertThat(exception.getErrorCode()).isEqualTo(ErrorCode.USER_NOT_FOUND))
 				.hasMessage("사용자를 찾을 수 없습니다.");
-		verify(pointWalletRepository, never()).findByUser(org.mockito.ArgumentMatchers.any());
+		verify(pointWalletRepository, never()).findByUserForUpdate(org.mockito.ArgumentMatchers.any());
 		verify(pointHistoryRepository, never()).save(org.mockito.ArgumentMatchers.any());
 	}
 
@@ -136,7 +136,7 @@ class PointChargeServiceTest {
 		// given
 		User user = user(1L, "테스트사용자");
 		when(userRepository.findById(1L)).thenReturn(Optional.of(user));
-		when(pointWalletRepository.findByUser(user)).thenReturn(Optional.empty());
+		when(pointWalletRepository.findByUserForUpdate(user)).thenReturn(Optional.empty());
 
 		// when & then
 		assertThatThrownBy(() -> pointChargeService.charge(1L, 10000L))
