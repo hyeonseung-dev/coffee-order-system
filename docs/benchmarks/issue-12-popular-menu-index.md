@@ -89,6 +89,19 @@ ALTER TABLE orders ADD INDEX idx_orders_menu_ordered_at_status (menu_id, ordered
 
 현재 `orders`에는 `COMPLETED`만 저장되므로 `status`는 인덱스 탐색의 선택도를 제공하지 않는다. 실제 계획에서 B는 `menu_id`, `status`를 lookup key로 사용하지만 단일 상태에서는 `status`가 탐색 범위를 줄이지 않는다. D는 `menu_id`만 lookup key로 사용했고, 날짜 범위도 B·D 모두 lookup key로 사용되지 않았다. 후보 C는 더 작지만 `status`가 없어 covering이 아니며 더 느렸다. B와 D는 같은 크기·actual rows·loops이고 모두 covering이다. 이번 5회 중앙값이 더 낮은 D를 현재 단일 상태 도메인의 최종 선택으로 삼되, B보다 구조적으로 또는 운영 환경에서 더 빠르다고 단정하지 않는다. 주문 실패·취소 상태를 저장하도록 도메인이 바뀌면 새 상태 분포에서 다시 측정해야 한다.
 
+## 주문 상태가 여러 개로 확장될 때의 재검증 기준
+
+현재 프로젝트는 성공 주문만 `orders`에 저장하므로 모든 행의 상태가 `COMPLETED`다. 이 조건에서는 `status`가 조회 대상을 줄이지 못하기 때문에, `ordered_at`을 앞에 둔 후보 D `(menu_id, ordered_at, status)`를 선택했다.
+
+향후 `PENDING`, `CANCELLED`, `FAILED` 같은 상태도 `orders`에 저장하도록 도메인이 바뀌면 후보 B `(menu_id, status, ordered_at)`가 더 유리해질 가능성이 있다.
+
+- 후보 B는 `menu_id = ?`, `status = 'COMPLETED'`라는 동등 조건으로 먼저 범위를 좁힌 뒤 `ordered_at` 기간 범위를 탐색할 수 있다.
+- 후보 D는 `menu_id` 다음에 범위 조건인 `ordered_at`이 오므로, 그 뒤의 `status`는 일반적으로 인덱스 탐색 범위를 추가로 줄이는 데 제한이 있다. 다만 covering 또는 인덱스 내부 필터링에는 계속 활용될 수 있다.
+- `COMPLETED` 비율이 낮고 취소·실패 주문이 많이 저장될수록 후보 B가 읽어야 하는 인덱스 범위를 더 크게 줄일 가능성이 있다.
+- 반대로 대부분의 주문이 `COMPLETED`라면 `status`의 선택도가 낮아 B와 D의 차이가 작을 수 있다.
+
+따라서 상태가 여러 개로 확장되면 현재 인덱스를 그대로 최적이라고 간주하지 않는다. 실제 운영에 가까운 상태 비율과 기간 분포를 fixture에 반영한 뒤 후보 B와 D를 다시 `EXPLAIN ANALYZE`, 중앙값, actual rows·loops, 인덱스 크기로 비교한다.
+
 ## 저장 공간과 쓰기 비용
 
 | 조건 | 격리 스키마 `information_schema.tables.index_length` |
