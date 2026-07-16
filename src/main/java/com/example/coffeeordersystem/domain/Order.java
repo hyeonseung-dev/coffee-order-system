@@ -8,6 +8,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
@@ -20,7 +21,9 @@ import java.time.Instant;
  * 실패한 요청은 생성하지 않으며, 성공 주문만 인기 메뉴 집계의 원본 데이터가 된다.
  */
 @Entity
-@Table(name = "orders")
+@Table(name = "orders", indexes = {
+		@Index(name = "idx_orders_menu_status_ordered_at", columnList = "menu_id, status, ordered_at")
+})
 public class Order {
 
 	@Id
