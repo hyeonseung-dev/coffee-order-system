@@ -1,6 +1,8 @@
 -- Issue #12: MySQL 8.4 인기 메뉴 인덱스 비교용 재실행 fixture
 -- 실행 전후에는 아래 BENCHMARK_CLEANUP 구문으로 이 fixture만 제거한다.
 
+USE coffee_order_issue12_benchmark;
+
 SET @fixture_prefix = 'issue-12-benchmark-';
 SET @from_inclusive = TIMESTAMP('2026-07-08 15:00:00');
 SET @to_exclusive = TIMESTAMP('2026-07-15 15:00:00');
@@ -54,6 +56,16 @@ JOIN benchmark_menu_ids menus ON menus.sequence_number = (FLOOR(numbers.n / 10) 
 WHERE numbers.n < 500000;
 
 ANALYZE TABLE orders;
+
+-- 격리 환경 계약: fixture 외 메뉴·주문이 없는 전용 스키마인지 확인한다.
+SELECT COUNT(*) AS total_menu_count,
+       SUM(status = 'ACTIVE') AS active_menu_count,
+       SUM(name NOT LIKE CONCAT(@fixture_prefix, '%')) AS non_fixture_menu_count
+FROM menu;
+
+SELECT COUNT(*) AS total_order_count,
+       SUM(user_id <> @fixture_user_id) AS non_fixture_order_count
+FROM orders;
 
 -- 각 메뉴가 전체 25,000건, 최근 7일 2,500건인지 직접 확인한다.
 SELECT menus.sequence_number,
