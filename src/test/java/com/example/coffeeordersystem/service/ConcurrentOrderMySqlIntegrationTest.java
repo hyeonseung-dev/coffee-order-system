@@ -107,7 +107,7 @@ class ConcurrentOrderMySqlIntegrationTest {
                     HttpResponse<String> response = postOrder(fixture);
                     return response.statusCode() >= 200 && response.statusCode() < 300
                             ? Outcome.successful()
-                            : Outcome.failure(response.body().contains("\"code\":\"INSUFFICIENT_POINT\"")
+                            : Outcome.apiFailure(response.statusCode(), response.body().contains("\"code\":\"INSUFFICIENT_POINT\"")
                                     ? ErrorCode.INSUFFICIENT_POINT.name()
                                     : "HTTP_" + response.statusCode());
                 },
@@ -116,6 +116,7 @@ class ConcurrentOrderMySqlIntegrationTest {
 
         logObservation("api", 1, observation);
         assertExpectedResult(observation);
+        assertThat(observation.failureStatusCodes()).containsOnly(Map.entry(400, 7L));
     }
 
     private Fixture createFixture(String scenario) {
@@ -193,7 +194,11 @@ class ConcurrentOrderMySqlIntegrationTest {
         Map<String, Long> failureTypes = outcomes.stream()
                 .filter(outcome -> !outcome.success())
                 .collect(Collectors.groupingBy(Outcome::reason, Collectors.counting()));
-        return new Observation(successCount, failureCount, orderCount, useHistoryCount, balance, failureTypes, violations);
+        Map<Integer, Long> failureStatusCodes = outcomes.stream()
+                .filter(outcome -> !outcome.success() && outcome.statusCode() != null)
+                .collect(Collectors.groupingBy(Outcome::statusCode, Collectors.counting()));
+        return new Observation(successCount, failureCount, orderCount, useHistoryCount, balance, failureTypes,
+                failureStatusCodes, violations);
     }
 
     private void logObservation(String testType, int attempt, Observation observation) {
@@ -224,17 +229,22 @@ class ConcurrentOrderMySqlIntegrationTest {
     private record Fixture(Long userId, Long walletId, Long menuId) {
     }
 
-    private record Outcome(boolean success, String reason) {
+    private record Outcome(boolean success, Integer statusCode, String reason) {
         static Outcome successful() {
-            return new Outcome(true, null);
+            return new Outcome(true, null, null);
         }
 
         static Outcome failure(String reason) {
-            return new Outcome(false, reason);
+            return new Outcome(false, null, reason);
+        }
+
+        static Outcome apiFailure(int statusCode, String reason) {
+            return new Outcome(false, statusCode, reason);
         }
     }
 
     private record Observation(long successCount, long failureCount, long orderCount, long useHistoryCount,
-                               long balance, Map<String, Long> failureTypes, List<String> violations) {
+                               long balance, Map<String, Long> failureTypes, Map<Integer, Long> failureStatusCodes,
+                               List<String> violations) {
     }
 }
