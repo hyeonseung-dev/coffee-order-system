@@ -2,7 +2,7 @@
 
 ## 결론
 
-`orders(menu_id, ordered_at, status)`를 최종 인덱스로 선택한다. 실제 JPQL은 ACTIVE 메뉴에서 시작해 `orders`를 LEFT JOIN하므로, `menu_id` 선두 인덱스가 조인 경로와 맞는다. 같은 컬럼 수·인덱스 크기인 후보 B보다 후보 D의 측정 중앙값이 낮았고, `status`는 현재 도메인에서 선택도가 없지만 covering을 위해 필요했다.
+`orders(menu_id, ordered_at, status)`를 최종 인덱스로 선택한다. 실제 JPQL은 ACTIVE 메뉴에서 시작해 `orders`를 LEFT JOIN하므로, `menu_id` 선두 인덱스가 조인 경로와 맞는다. 후보 D는 현재 단일 상태 도메인에 맞춰 `ordered_at`을 `status`보다 앞에 둔 covering index다. 이번 5회 표본에서는 D의 중앙값이 B보다 낮았지만, B와 D의 구조적·운영 환경 성능 우위를 단정하지 않는다.
 
 이 결과는 로컬 Docker MySQL 8.4 안의 전용 `coffee_order_issue12_benchmark` 스키마에서 측정한 DB 쿼리 결과다. 일반 개발 스키마와 `MenuDeveloperDataInitializer` 데이터는 포함하지 않았다. HTTP 응답시간·처리량·p95는 이 문서의 결론에 포함하지 않으며 #45에서 검증한다.
 
@@ -77,17 +77,17 @@ ALTER TABLE orders ADD INDEX idx_orders_menu_ordered_at (menu_id, ordered_at);
 ALTER TABLE orders ADD INDEX idx_orders_menu_ordered_at_status (menu_id, ordered_at, status);
 ```
 
-| 조건 | 측정 5회(ms) | 중앙값(ms) | 실제 사용 인덱스·covering | 주문 인덱스 actual rows × loops | 날짜 범위가 lookup key인가 |
-|---|---:|---:|---|---:|---|
-| 기준선: `(menu_id)` | 180, 179, 178, 186, 179 | 179.0 | `idx_orders_menu_id`, 아니오 | 25,000 × 15 | 아니오 |
-| 후보 A: `(ordered_at, menu_id)` | 182, 227, 184, 183, 191 | 184.0 | 기존 `idx_orders_menu_id`, 아니오 | 25,000 × 15 | 아니오 |
-| 후보 B: `(menu_id, status, ordered_at)` | 75.8, 71.5, 71.2, 71.0, 106.0 | 71.5 | `idx_orders_menu_status_ordered_at`, 예 | 25,000 × 15 | 아니오 |
-| 후보 C: `(menu_id, ordered_at)` | 210, 290, 201, 199, 202 | 202.0 | `idx_orders_menu_ordered_at`, 아니오 | 25,000 × 15 | 아니오 |
-| 후보 D: `(menu_id, ordered_at, status)` | 64.8, 66.0, 67.0, 69.7, 64.0 | 66.0 | `idx_orders_menu_ordered_at_status`, 예 | 25,000 × 15 | 아니오 |
+| 조건 | 측정 5회(ms) | 중앙값(ms) | 실제 사용 인덱스·covering | 실제 lookup key | 주문 인덱스 actual rows × loops | 날짜 범위가 lookup key인가 |
+|---|---:|---:|---|---|---:|---|
+| 기준선: `(menu_id)` | 180, 179, 178, 186, 179 | 179.0 | `idx_orders_menu_id`, 아니오 | `menu_id` | 25,000 × 15 | 아니오 |
+| 후보 A: `(ordered_at, menu_id)` | 182, 227, 184, 183, 191 | 184.0 | 기존 `idx_orders_menu_id`, 아니오 | `menu_id` | 25,000 × 15 | 아니오 |
+| 후보 B: `(menu_id, status, ordered_at)` | 75.8, 71.5, 71.2, 71.0, 106.0 | 71.5 | `idx_orders_menu_status_ordered_at`, 예 | `menu_id`, `status` | 25,000 × 15 | 아니오 |
+| 후보 C: `(menu_id, ordered_at)` | 210, 290, 201, 199, 202 | 202.0 | `idx_orders_menu_ordered_at`, 아니오 | `menu_id` | 25,000 × 15 | 아니오 |
+| 후보 D: `(menu_id, ordered_at, status)` | 64.8, 66.0, 67.0, 69.7, 64.0 | 66.0 | `idx_orders_menu_ordered_at_status`, 예 | `menu_id` | 25,000 × 15 | 아니오 |
 
 모든 조건에서 메뉴 테이블 20행을 읽고 ACTIVE 15행에서 주문 조회를 15회 수행했으며, 기간 조건 뒤에는 메뉴별 2,500행, 총 37,500행을 집계했다. 후보 D의 중앙값은 기준선 대비 약 63.1% 낮았다. `GROUP BY`, `COUNT`, 정렬을 위한 임시 테이블과 TOP 3 정렬 비용은 남는다.
 
-현재 `orders`에는 `COMPLETED`만 저장되므로 `status`는 인덱스 탐색의 선택도를 제공하지 않는다. 실제 계획에서도 B와 D 모두 `menu_id`만 lookup key로 사용했고 날짜 범위도 lookup key로 사용되지 않았다. 후보 C는 더 작지만 `status`가 없어 covering이 아니며 더 느렸다. B와 D는 같은 크기이고 둘 다 covering이므로, 이번 5회 중앙값이 더 낮은 D를 최종 선택했다. 주문 실패·취소 상태를 저장하도록 도메인이 바뀌면 새 상태 분포에서 다시 측정해야 한다.
+현재 `orders`에는 `COMPLETED`만 저장되므로 `status`는 인덱스 탐색의 선택도를 제공하지 않는다. 실제 계획에서 B는 `menu_id`, `status`를 lookup key로 사용하지만 단일 상태에서는 `status`가 탐색 범위를 줄이지 않는다. D는 `menu_id`만 lookup key로 사용했고, 날짜 범위도 B·D 모두 lookup key로 사용되지 않았다. 후보 C는 더 작지만 `status`가 없어 covering이 아니며 더 느렸다. B와 D는 같은 크기·actual rows·loops이고 모두 covering이다. 이번 5회 중앙값이 더 낮은 D를 현재 단일 상태 도메인의 최종 선택으로 삼되, B보다 구조적으로 또는 운영 환경에서 더 빠르다고 단정하지 않는다. 주문 실패·취소 상태를 저장하도록 도메인이 바뀌면 새 상태 분포에서 다시 측정해야 한다.
 
 ## 저장 공간과 쓰기 비용
 
