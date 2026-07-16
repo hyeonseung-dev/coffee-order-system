@@ -22,7 +22,7 @@ import java.time.Instant;
  */
 @Entity
 @Table(name = "orders", indexes = {
-		@Index(name = "idx_orders_menu_status_ordered_at", columnList = "menu_id, status, ordered_at")
+		@Index(name = "idx_orders_menu_ordered_at_status", columnList = "menu_id, ordered_at, status")
 })
 public class Order {
 
