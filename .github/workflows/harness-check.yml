@@ -23,6 +23,16 @@ jobs:
   harness-check:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout repository
@@ -100,6 +110,9 @@ jobs:
 
       - name: Run Gradle tests
         run: ./gradlew test
+
+      - name: Run Redis cache integration tests
+        run: ./gradlew test --tests com.example.coffeeordersystem.service.PopularMenuCacheRedisIntegrationTest -Dredis.integration.test=true
 
       - name: Run Gradle build without repeating tests
         run: ./gradlew build -x test

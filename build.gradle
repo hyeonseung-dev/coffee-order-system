@@ -20,6 +20,7 @@ repositories {
 
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
     implementation 'com.fasterxml.jackson.core:jackson-databind'
@@ -37,6 +38,8 @@ dependencies {
 }
 
 tasks.named('test') {
+    systemProperty 'redis.failure.test', System.getProperty('redis.failure.test', 'false')
+    systemProperty 'redis.integration.test', System.getProperty('redis.integration.test', 'false')
     useJUnitPlatform {
         excludeTags 'concurrency'
     }

@@ -16,6 +16,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,6 +33,8 @@ class MenuServiceTest {
 	private MenuRepository menuRepository;
 	@Mock
 	private Clock clock;
+	@Mock
+	private PopularMenuCache popularMenuCache;
 
 	@InjectMocks
 	private MenuService menuService;
@@ -71,6 +74,8 @@ class MenuServiceTest {
 	@Test
 	void 직전_7개_완료_일자와_TOP3_조건으로_인기_메뉴를_조회한다() {
 		when(clock.instant()).thenReturn(Instant.parse("2026-07-13T03:00:00Z"));
+		when(popularMenuCache.findByBusinessDate(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+				.thenAnswer(invocation -> invocation.<java.util.function.Supplier<List<PopularMenuResponse>>>getArgument(1).get());
 		PopularMenuProjection americano = popularMenu(1L, "Americano", 5L);
 		PopularMenuProjection latte = popularMenu(2L, "Latte", 3L);
 		when(menuRepository.findPopularMenus(
@@ -97,6 +102,20 @@ class MenuServiceTest {
 		);
 		assertThat(pageableCaptor.getValue().getPageNumber()).isZero();
 		assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(3);
+		verify(popularMenuCache).findByBusinessDate(
+				org.mockito.ArgumentMatchers.eq(LocalDate.of(2026, 7, 13)),
+				org.mockito.ArgumentMatchers.any());
+	}
+
+	@Test
+	void UTC_자정_이후_15시는_다음_KST_업무_날짜_Key를_사용한다() {
+		when(clock.instant()).thenReturn(Instant.parse("2026-07-13T15:00:00Z"));
+		when(popularMenuCache.findByBusinessDate(
+				org.mockito.ArgumentMatchers.eq(LocalDate.of(2026, 7, 14)),
+				org.mockito.ArgumentMatchers.any()))
+				.thenReturn(List.of());
+
+		assertThat(menuService.findPopularMenus()).isEmpty();
 	}
 
 	private Menu menu(Long id, String name, Long price, MenuStatus status) {
