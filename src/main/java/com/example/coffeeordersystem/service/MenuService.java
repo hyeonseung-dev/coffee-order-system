@@ -27,10 +27,12 @@ public class MenuService {
 
 	private final MenuRepository menuRepository;
 	private final Clock clock;
+	private final PopularMenuCache popularMenuCache;
 
-	public MenuService(MenuRepository menuRepository, Clock clock) {
+	public MenuService(MenuRepository menuRepository, Clock clock, PopularMenuCache popularMenuCache) {
 		this.menuRepository = menuRepository;
 		this.clock = clock;
+		this.popularMenuCache = popularMenuCache;
 	}
 
 	/**
@@ -57,6 +59,10 @@ public class MenuService {
 	@Transactional(readOnly = true)
 	public List<PopularMenuResponse> findPopularMenus() {
 		LocalDate today = Instant.now(clock).atZone(BUSINESS_ZONE).toLocalDate();
+		return popularMenuCache.findByBusinessDate(today, () -> findPopularMenusFromDatabase(today));
+	}
+
+	private List<PopularMenuResponse> findPopularMenusFromDatabase(LocalDate today) {
 		Instant fromInclusive = today.minusDays(7).atStartOfDay(BUSINESS_ZONE).toInstant();
 		Instant toExclusive = today.atStartOfDay(BUSINESS_ZONE).toInstant();
 
