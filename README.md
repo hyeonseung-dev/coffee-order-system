@@ -69,5 +69,6 @@ Codex는 승인된 Issue를 구현·검증하고 Draft PR을 만든다.
 - [Pull Request & Understanding Gate Template](.github/PULL_REQUEST_TEMPLATE.md)
 - [ADR Guide](docs/adr/README.md)
 - [ADR Template](docs/adr/ADR_TEMPLATE.md)
+- [ADR-001. 인기 메뉴 캐시 전략](docs/adr/ADR-001-popular-menu-cache-strategy.md)
 - [Harness Logs](logs/README.md)
 - [Code Review Template](.github/CODE_REVIEW_TEMPLATE.md)
