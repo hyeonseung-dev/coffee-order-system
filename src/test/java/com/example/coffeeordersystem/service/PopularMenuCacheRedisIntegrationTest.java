@@ -3,6 +3,7 @@ package com.example.coffeeordersystem.service;
 import com.example.coffeeordersystem.dto.PopularMenuResponse;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** Docker Compose Redis에 실제로 연결해 캐시 Key, TTL, 만료 뒤 재생성을 검증한다. */
 @SpringBootTest
 @ActiveProfiles("test")
+@EnabledIfSystemProperty(named = "redis.integration.test", matches = "true")
 class PopularMenuCacheRedisIntegrationTest {
 
 	private static final Logger log = LoggerFactory.getLogger(PopularMenuCacheRedisIntegrationTest.class);

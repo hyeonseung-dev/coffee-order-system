@@ -39,6 +39,7 @@ dependencies {
 
 tasks.named('test') {
     systemProperty 'redis.failure.test', System.getProperty('redis.failure.test', 'false')
+    systemProperty 'redis.integration.test', System.getProperty('redis.integration.test', 'false')
     useJUnitPlatform {
         excludeTags 'concurrency'
     }
