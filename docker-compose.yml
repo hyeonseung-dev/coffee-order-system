@@ -69,7 +69,7 @@ services:
     container_name: coffee-order-redis-master
     restart: unless-stopped
     ports:
-      - "${REDIS_PORT:-6379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     command: ["redis-server", "/usr/local/etc/redis/redis-master.conf"]
     volumes:
       - redis-master-data:/data
@@ -86,11 +86,12 @@ services:
     image: redis:7.4-alpine
     container_name: coffee-order-redis-replica
     restart: unless-stopped
+    profiles: ["redis-ha", "redis-ha-test"]
     depends_on:
       redis-master:
         condition: service_healthy
     ports:
-      - "${REDIS_REPLICA_PORT:-6380}:6379"
+      - "127.0.0.1:${REDIS_REPLICA_PORT:-6380}:6379"
     command: ["redis-server", "/usr/local/etc/redis/redis-replica.conf"]
     volumes:
       - redis-replica-data:/data
@@ -107,13 +108,14 @@ services:
     image: redis:7.4-alpine
     container_name: coffee-order-redis-sentinel-1
     restart: unless-stopped
+    profiles: ["redis-ha", "redis-ha-test"]
     depends_on:
       redis-master:
         condition: service_healthy
       redis-replica:
         condition: service_healthy
     ports:
-      - "${REDIS_SENTINEL_1_PORT:-26379}:26379"
+      - "127.0.0.1:${REDIS_SENTINEL_1_PORT:-26379}:26379"
     command: ["sh", "-c", "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf && /usr/local/bin/start-sentinel.sh"]
     volumes:
       - ./docker/redis/sentinel-1.conf:/usr/local/etc/redis/sentinel.conf:ro
@@ -130,13 +132,14 @@ services:
     image: redis:7.4-alpine
     container_name: coffee-order-redis-sentinel-2
     restart: unless-stopped
+    profiles: ["redis-ha", "redis-ha-test"]
     depends_on:
       redis-master:
         condition: service_healthy
       redis-replica:
         condition: service_healthy
     ports:
-      - "${REDIS_SENTINEL_2_PORT:-26380}:26379"
+      - "127.0.0.1:${REDIS_SENTINEL_2_PORT:-26380}:26379"
     command: ["sh", "-c", "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf && /usr/local/bin/start-sentinel.sh"]
     volumes:
       - ./docker/redis/sentinel-2.conf:/usr/local/etc/redis/sentinel.conf:ro
@@ -153,13 +156,14 @@ services:
     image: redis:7.4-alpine
     container_name: coffee-order-redis-sentinel-3
     restart: unless-stopped
+    profiles: ["redis-ha", "redis-ha-test"]
     depends_on:
       redis-master:
         condition: service_healthy
       redis-replica:
         condition: service_healthy
     ports:
-      - "${REDIS_SENTINEL_3_PORT:-26381}:26379"
+      - "127.0.0.1:${REDIS_SENTINEL_3_PORT:-26381}:26379"
     command: ["sh", "-c", "cp /usr/local/etc/redis/sentinel.conf /tmp/sentinel.conf && /usr/local/bin/start-sentinel.sh"]
     volumes:
       - ./docker/redis/sentinel-3.conf:/usr/local/etc/redis/sentinel.conf:ro
@@ -178,6 +182,7 @@ services:
       dockerfile: Dockerfile
     container_name: coffee-order-app-ha
     restart: "no"
+    profiles: ["redis-ha"]
     depends_on:
       mysql-primary:
         condition: service_healthy
@@ -194,13 +199,36 @@ services:
       redis-sentinel-3:
         condition: service_healthy
     ports:
-      - "${APP_HA_PORT:-18080}:8080"
+      - "127.0.0.1:${APP_HA_PORT:-18080}:8080"
     environment:
       SPRING_PROFILES_ACTIVE: redis-ha
       DB_PRIMARY_URL: jdbc:mysql://mysql-primary:3306/${MYSQL_DATABASE:-coffee_order}?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&characterEncoding=UTF-8
       DB_REPLICA_URL: jdbc:mysql://mysql-replica:3306/${MYSQL_DATABASE:-coffee_order}?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&characterEncoding=UTF-8
       DB_USERNAME: ${MYSQL_USER:-coffee_user}
       DB_PASSWORD: ${MYSQL_PASSWORD:-coffee_password}
+    networks:
+      - coffee-order-network
+
+  redis-ha-integration-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: build
+    profiles: ["redis-ha-test"]
+    command: ["./gradlew", "test", "-Dredis.sentinel.integration.test=true", "--tests", "com.example.coffeeordersystem.service.PopularMenuCacheSentinelIntegrationTest"]
+    depends_on:
+      redis-master:
+        condition: service_healthy
+      redis-replica:
+        condition: service_healthy
+      redis-sentinel-1:
+        condition: service_healthy
+      redis-sentinel-2:
+        condition: service_healthy
+      redis-sentinel-3:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: test,redis-ha
     networks:
       - coffee-order-network
 

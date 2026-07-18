@@ -33,12 +33,6 @@ class PopularMenuCacheRedisIntegrationTest {
 	@Autowired private PopularMenuCache popularMenuCache;
 	@Autowired private StringRedisTemplate redisTemplate;
 
-	@Test
-	void Sentinel을_통해_현재_Master에_연결한다() {
-		assertThat(redisTemplate.getConnectionFactory().getSentinelConnection())
-				.isNotNull();
-	}
-
 	@AfterEach
 	void tearDown() {
 		redisTemplate.delete(KEY);

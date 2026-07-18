@@ -44,6 +44,29 @@ Codex는 승인된 Issue를 구현·검증하고 Draft PR을 만든다.
 ./gradlew bootRun
 ```
 
+`bootRun`은 기본 Redis host/port 설정을 사용하며 Sentinel HA 검증 프로필을 활성화하지 않는다. 일반 `docker compose up -d`도 `redis-ha` profile 서비스(Replica, Sentinel, app-ha)를 기동하지 않는다.
+
+### Redis HA 로컬 검증
+
+```bash
+docker compose --profile redis-ha up -d --build app-ha
+curl http://localhost:18080/api/menus/popular
+docker compose exec redis-sentinel-1 redis-cli -p 26379 SENTINEL CKQUORUM coffee-order-redis
+docker compose exec redis-sentinel-1 redis-cli -p 26379 SENTINEL GET-MASTER-ADDR-BY-NAME coffee-order-redis
+scripts/redis/verify-sentinel-failover.sh
+docker compose --profile redis-ha down
+```
+
+`app-ha`는 Docker 내부 서비스 hostname으로 Sentinel을 찾고, API는 `http://localhost:18080`으로 확인한다. Redis·Sentinel·app-ha 포트는 `127.0.0.1`에만 게시된다. 복구 검증에서는 app-ha를 재시작하지 않는다. `docker compose down -v`는 Docker volume의 데이터를 삭제하므로 별도 판단 후 사용한다.
+
+Sentinel 전용 통합 테스트는 일반 `./gradlew test`와 분리되어 있으며, Redis·Sentinel과 같은 Docker network에서 실행한다.
+
+```bash
+docker compose --profile redis-ha-test run --rm redis-ha-integration-test
+```
+
+로컬 Redis 포트 충돌 시에는 `REDIS_PORT=16379 REDIS_REPLICA_PORT=16380 REDIS_SENTINEL_1_PORT=36379 REDIS_SENTINEL_2_PORT=36380 REDIS_SENTINEL_3_PORT=36381`를 앞에 지정해 격리할 수 있다.
+
 ### v3 MySQL Primary-Replica·Redis Sentinel 실행
 
 ```bash

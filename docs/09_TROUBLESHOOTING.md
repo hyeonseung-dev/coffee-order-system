@@ -15,13 +15,32 @@ docker compose up -d redis-master redis-replica redis-sentinel-1 redis-sentinel-
 scripts/redis/verify-sentinel-failover.sh
 ```
 
-스크립트는 `SENTINEL CKQUORUM`, 장애 전후 `GET-MASTER-ADDR-BY-NAME`, 각 노드의 `INFO replication`, Sentinel의 감지·승격 로그를 출력한다. 애플리케이션을 Sentinel 설정으로 실행한 뒤에는 `-Dredis.integration.test=true`로 Cache Hit/Miss/TTL 및 Sentinel 연결을, Redis를 모두 중지한 상태에서는 `-Dredis.failure.test=true`로 MySQL fallback을 확인한다.
+스크립트는 `SENTINEL CKQUORUM`, 장애 전후 `GET-MASTER-ADDR-BY-NAME`, 각 노드의 `INFO replication`, Sentinel의 감지·승격 로그를 검증한다. 일반 `./gradlew test`는 외부 Sentinel을 요구하지 않으며, Sentinel 연결·Cache Miss/Hit/TTL 재생성은 Docker network 안의 전용 서비스로 실행한다.
+
+```bash
+docker compose --profile redis-ha-test run --rm redis-ha-integration-test
+```
 
 ### 해석과 제한
 
 Sentinel의 장애 감지·승격·클라이언트 재연결 동안 요청이 지연되거나 일부 실패할 수 있다. 캐시 조회·저장 예외가 `PopularMenuCache`에서 잡혀 MySQL 결과를 반환하면 캐시 장애가 주문·포인트로 전파되지 않는다. Redis 복제는 비동기이므로 Failover 직전 캐시 Key가 유실될 수 있으나, 다음 Cache Miss에서 MySQL 집계로 재생성한다.
 
 Redis Cluster, 샤딩, 운영 수준 백업·복구, Redis 분산락은 이 Issue 범위에 포함하지 않는다.
+
+일반 `./gradlew test`는 외부 Redis 없이 실행한다. Sentinel HA 통합 테스트는 Redis·Sentinel과 동일 Docker 네트워크에서 별도 profile로 실행해야 하며, 일반 테스트 성공을 외부 인프라 검증으로 해석하지 않는다.
+
+로컬 HA 검증은 다음 명령으로 시작한다.
+
+```bash
+docker compose --profile redis-ha up -d --build app-ha
+docker compose exec redis-sentinel-1 redis-cli -p 26379 SENTINEL CKQUORUM coffee-order-redis
+scripts/redis/verify-sentinel-failover.sh
+docker compose --profile redis-ha down
+```
+
+Compose 서비스 내부 통신은 `redis-master`, `redis-replica`, `redis-sentinel-*` hostname을 사용한다. 호스트 공개 포트는 `127.0.0.1`로 제한한다. 이 검증은 로컬 Docker 장애 재현 결과이며 운영 SLA나 절대적 무중단을 보장하지 않는다. Redis 복제는 비동기라 Failover 직전 일부 캐시 Key가 유실될 수 있고, 다음 Cache Miss에서 MySQL 원본으로 재생성한다.
+
+호스트의 기존 Redis와 포트가 충돌하면 HA 또는 Sentinel 테스트 명령 앞에 `REDIS_PORT=16379 REDIS_REPLICA_PORT=16380 REDIS_SENTINEL_1_PORT=36379 REDIS_SENTINEL_2_PORT=36380 REDIS_SENTINEL_3_PORT=36381`를 지정한다.
 
 ### 2026-07-18 직접 검증 결과
 
