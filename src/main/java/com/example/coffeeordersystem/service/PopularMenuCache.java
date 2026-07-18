@@ -25,21 +25,28 @@ public class PopularMenuCache {
 	private final StringRedisTemplate redisTemplate;
 	private final ObjectMapper objectMapper;
 	private final Duration ttl;
+	private final boolean enabled;
 
 	public PopularMenuCache(
 			StringRedisTemplate redisTemplate,
 			ObjectMapper objectMapper,
-			@Value("${popular-menu-cache.ttl-seconds}") long ttlSeconds
+			@Value("${popular-menu-cache.ttl-seconds}") long ttlSeconds,
+			@Value("${popular-menu-cache.enabled:true}") boolean enabled
 	) {
 		this.redisTemplate = redisTemplate;
 		this.objectMapper = objectMapper;
 		this.ttl = Duration.ofSeconds(ttlSeconds);
+		this.enabled = enabled;
 	}
 
 	public List<PopularMenuResponse> findByBusinessDate(
 			LocalDate businessDate,
 			Supplier<List<PopularMenuResponse>> databaseQuery
 	) {
+		if (!enabled) {
+			return databaseQuery.get();
+		}
+
 		String key = keyOf(businessDate);
 		List<PopularMenuResponse> cached = get(key);
 		if (cached != null) {

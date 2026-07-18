@@ -22,6 +22,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -35,18 +36,23 @@ class PopularMenuCacheTest {
 	@BeforeEach
 	void setUp() {
 		lenient().when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-		popularMenuCache = new PopularMenuCache(redisTemplate, new ObjectMapper(), 86_400L);
+		popularMenuCache = new PopularMenuCache(redisTemplate, new ObjectMapper(), 86_400L, true);
 	}
 
 	@Test
 	void Cache_Miss이면_MySQL_결과를_TTL과_함께_저장한다() {
 		LocalDate businessDate = LocalDate.of(2026, 7, 17);
 		List<PopularMenuResponse> databaseResult = List.of(new PopularMenuResponse(1L, "Americano", 5L));
+		AtomicInteger databaseCalls = new AtomicInteger();
 		when(valueOperations.get("popular:menus:7days:2026-07-17:v1")).thenReturn(null);
 
-		List<PopularMenuResponse> result = popularMenuCache.findByBusinessDate(businessDate, () -> databaseResult);
+		List<PopularMenuResponse> result = popularMenuCache.findByBusinessDate(businessDate, () -> {
+			databaseCalls.incrementAndGet();
+			return databaseResult;
+		});
 
 		assertThat(result).isEqualTo(databaseResult);
+		assertThat(databaseCalls).hasValue(1);
 		verify(valueOperations).set(
 				eq("popular:menus:7days:2026-07-17:v1"),
 				eq("[{\"menuId\":1,\"name\":\"Americano\",\"orderCount\":5}]"),
@@ -71,6 +77,27 @@ class PopularMenuCacheTest {
 		assertThat(result).containsExactly(new PopularMenuResponse(1L, "Americano", 5L));
 		assertThat(databaseCalls).hasValue(0);
 		verify(valueOperations, never()).set(any(), any(), any(Duration.class));
+	}
+
+	@Test
+	void 캐시가_비활성화되면_Redis를_호출하지_않고_MySQL_결과를_한번만_반환한다() {
+		PopularMenuCache disabledCache = new PopularMenuCache(
+				redisTemplate, new ObjectMapper(), 86_400L, false
+		);
+		List<PopularMenuResponse> databaseResult = List.of(new PopularMenuResponse(1L, "Americano", 5L));
+		AtomicInteger databaseCalls = new AtomicInteger();
+
+		List<PopularMenuResponse> result = disabledCache.findByBusinessDate(
+				LocalDate.of(2026, 7, 17),
+				() -> {
+					databaseCalls.incrementAndGet();
+					return databaseResult;
+				}
+		);
+
+		assertThat(result).isSameAs(databaseResult);
+		assertThat(databaseCalls).hasValue(1);
+		verifyNoInteractions(redisTemplate);
 	}
 
 	@Test

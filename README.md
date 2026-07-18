@@ -70,5 +70,10 @@ Codex는 승인된 Issue를 구현·검증하고 Draft PR을 만든다.
 - [ADR Guide](docs/adr/README.md)
 - [ADR Template](docs/adr/ADR_TEMPLATE.md)
 - [ADR-001. 인기 메뉴 캐시 전략](docs/adr/ADR-001-popular-menu-cache-strategy.md)
+- [Issue #45 인기 메뉴 K6 성능 비교](docs/benchmarks/issue-45-popular-menu-k6.md)
 - [Harness Logs](logs/README.md)
 - [Code Review Template](.github/CODE_REVIEW_TEMPLATE.md)
+
+## 인기 메뉴 API 성능 비교
+
+Issue #45의 Human 로컬 K6 측정에서 Redis Cache Hit는 MySQL 직접 조회 기준선 대비 평균 응답시간 약 16.4% 감소, p95 약 18.4% 감소, 측정 구간 RPS 약 19.6% 증가를 기록했다. 이는 로컬 단일 장비·소규모 데이터 결과이며 운영 TPS로 일반화하지 않는다. 상세 조건과 Cache Miss 결과는 [벤치마크 문서](docs/benchmarks/issue-45-popular-menu-k6.md)를 따른다.
