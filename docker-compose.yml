@@ -1,27 +1,62 @@
 services:
-  mysql:
+  mysql-primary:
     image: mysql:8.4
-    container_name: coffee-order-mysql
+    container_name: coffee-order-mysql-primary
     restart: unless-stopped
     ports:
-      - "${MYSQL_PORT:-3307}:3306"
+      - "${MYSQL_PRIMARY_PORT:-3307}:3306"
     environment:
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-coffee_order}
+      MYSQL_USER: ${MYSQL_USER:-coffee_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-coffee_password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password}
+      MYSQL_REPLICATION_USER: ${MYSQL_REPLICATION_USER:-replicator}
+      MYSQL_REPLICATION_PASSWORD: ${MYSQL_REPLICATION_PASSWORD:-replicator_password}
       TZ: Asia/Seoul
     command:
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_0900_ai_ci
+      - --server-id=1
+      - --log-bin=mysql-bin
+      - --binlog-format=ROW
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
     volumes:
-      - mysql-data:/var/lib/mysql
+      - mysql-primary-data:/var/lib/mysql
+      - ./docker/mysql/create-replication-user.sh:/docker-entrypoint-initdb.d/01-create-replication-user.sh:ro
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"
-        ]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - coffee-order-network
+
+  mysql-replica:
+    image: mysql:8.4
+    container_name: coffee-order-mysql-replica
+    restart: unless-stopped
+    depends_on:
+      mysql-primary:
+        condition: service_healthy
+    ports:
+      - "${MYSQL_REPLICA_PORT:-3308}:3306"
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-coffee_order}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password}
+      MYSQL_REPLICATION_USER: ${MYSQL_REPLICATION_USER:-replicator}
+      MYSQL_REPLICATION_PASSWORD: ${MYSQL_REPLICATION_PASSWORD:-replicator_password}
+      TZ: Asia/Seoul
+    command:
+      - --server-id=2
+      - --relay-log=relay-bin
+      - --read-only=ON
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+    volumes:
+      - mysql-replica-data:/var/lib/mysql
+      - ./docker/mysql/configure-replica.sh:/docker-entrypoint-initdb.d/01-configure-replica.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -35,10 +70,7 @@ services:
     restart: unless-stopped
     ports:
       - "${REDIS_PORT:-6379}:6379"
-    command:
-      - redis-server
-      - --appendonly
-      - "yes"
+    command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis-data:/data
     healthcheck:
@@ -50,7 +82,8 @@ services:
       - coffee-order-network
 
 volumes:
-  mysql-data:
+  mysql-primary-data:
+  mysql-replica-data:
   redis-data:
 
 networks:

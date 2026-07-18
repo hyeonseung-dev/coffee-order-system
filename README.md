@@ -44,6 +44,18 @@ Codex는 승인된 Issue를 구현·검증하고 Draft PR을 만든다.
 ./gradlew bootRun
 ```
 
+### v3 MySQL Primary-Replica 실행
+
+```bash
+docker compose up -d mysql-primary mysql-replica redis
+docker compose exec mysql-replica sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW REPLICA STATUS\\G"'
+```
+
+- Primary는 `localhost:3307`, Replica는 `localhost:3308`을 사용한다.
+- 쓰기 트랜잭션과 비관적 락 조회는 Primary에 고정된다. `@Transactional(readOnly = true)`인 메뉴·인기 메뉴 조회만 Replica 후보이며, 트랜잭션 밖의 조회는 안전하게 Primary를 사용한다.
+- Replica 장애 시 자동 Primary fallback은 구현하지 않는다. 따라서 Replica 대상 메뉴·인기 메뉴 HTTP 경로의 오류 응답과 주문·포인트 HTTP 경로의 지속 처리는 별도 직접 검증이 필요하다.
+- 초기화 스크립트는 빈 Docker volume에서만 실행된다. 복제 구성을 처음부터 다시 만들려면 데이터가 삭제되는 `docker compose down -v`가 필요하므로, 기존 로컬 데이터가 있으면 실행 전에 백업 여부를 판단한다.
+
 테스트 실행:
 
 ```bash

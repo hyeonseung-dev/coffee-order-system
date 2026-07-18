@@ -34,6 +34,36 @@
 
 ---
 
+## Issue #43 - Replica 읽기 직후 최신 쓰기 결과를 조회하면 오래된 데이터를 볼 수 있음
+
+### 문제
+
+MySQL 비동기 복제는 Primary 커밋과 Replica 적용 사이에 지연이 생길 수 있다. 따라서 쓰기 성공 직후 `@Transactional(readOnly = true)` 조회를 Replica로 보내면 방금 저장한 메뉴·주문 집계가 아직 보이지 않을 수 있다.
+
+### 해결
+
+`ReplicationRoutingDataSource`는 읽기 전용 트랜잭션만 Replica로 보낸다. 쓰기 트랜잭션, 트랜잭션 밖의 조회, 주문 중 지갑을 `PESSIMISTIC_WRITE`로 읽는 경로는 모두 Primary를 사용한다. `LazyConnectionDataSourceProxy`로 트랜잭션 속성이 결정된 뒤에 실제 Connection을 얻도록 구성했다.
+
+Replica 장애의 자동 Primary fallback은 적용하지 않았다. 장애 시 읽기 부하가 Primary로 몰려 주문·포인트 원본 처리까지 영향을 받는 것을 숨기지 않기 위해서다.
+
+### 직접 검증 절차
+
+```bash
+docker compose up -d mysql-primary mysql-replica
+docker compose exec mysql-replica sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW REPLICA STATUS\\G"'
+docker compose exec mysql-replica sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "STOP REPLICA SQL_THREAD;"'
+# Primary에 데이터를 저장한 뒤 Replica에서 아직 보이지 않는지 조회한다.
+docker compose exec mysql-replica sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "START REPLICA SQL_THREAD;"'
+```
+
+`SHOW REPLICA STATUS`의 IO/SQL thread와 `Seconds_Behind_Source`, `Last_SQL_Error`를 함께 기록한다. Replica 컨테이너를 중지했을 때 메뉴·인기 메뉴 요청이 명시적으로 실패하고, 주문·포인트 요청이 Primary에서 계속 동작하는지도 별도로 확인한다.
+
+### 한계
+
+이 구성은 로컬 단일 Replica 학습 환경이다. 자동 failover, 다중 Replica 부하 분산, ProxySQL·HAProxy, 운영 비밀 관리와 GTID 토폴로지 복구는 범위에서 제외한다.
+
+---
+
 ## Issue #9 - 주문 저장 시각과 인기 메뉴 조회 경계의 시간 원본 불일치
 
 ### 상태
