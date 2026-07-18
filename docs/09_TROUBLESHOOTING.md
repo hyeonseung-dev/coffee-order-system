@@ -50,10 +50,10 @@ Replica 장애의 자동 Primary fallback은 적용하지 않았다. 장애 시 
 
 ```bash
 docker compose up -d mysql-primary mysql-replica
-docker compose exec mysql-replica mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW REPLICA STATUS\\G"
-docker compose exec mysql-replica mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "STOP REPLICA SQL_THREAD;"
+docker compose exec mysql-replica sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW REPLICA STATUS\\G"'
+docker compose exec mysql-replica sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "STOP REPLICA SQL_THREAD;"'
 # Primary에 데이터를 저장한 뒤 Replica에서 아직 보이지 않는지 조회한다.
-docker compose exec mysql-replica mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "START REPLICA SQL_THREAD;"
+docker compose exec mysql-replica sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "START REPLICA SQL_THREAD;"'
 ```
 
 `SHOW REPLICA STATUS`의 IO/SQL thread와 `Seconds_Behind_Source`, `Last_SQL_Error`를 함께 기록한다. Replica 컨테이너를 중지했을 때 메뉴·인기 메뉴 요청이 명시적으로 실패하고, 주문·포인트 요청이 Primary에서 계속 동작하는지도 별도로 확인한다.
