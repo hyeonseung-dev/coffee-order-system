@@ -51,7 +51,7 @@ elif [[ "$scenario" == "hit" ]]; then
 else
   for run in 1 2 3; do
     echo "== Cache Miss cold request $run/3 =="
-    docker compose -f "$project_root/docker-compose.yml" exec -T redis redis-cli DEL "$cache_key"
+    docker compose -f "$project_root/docker-compose.yml" exec -T redis-master redis-cli DEL "$cache_key"
     run_k6
     wait_between_runs
   done

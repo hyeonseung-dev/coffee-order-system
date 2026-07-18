@@ -2,6 +2,34 @@
 
 프로젝트 진행 중 발생한 문제와 해결 과정을 기록한다.
 
+## Issue #44 — Redis Sentinel Failover와 MySQL Fallback 확인 절차
+
+### 목적
+
+인기 메뉴의 정답 데이터는 MySQL `orders`이며 Redis는 Cache-Aside 결과 캐시다. 따라서 Redis Master 장애 시 Sentinel이 Replica를 승격하는지, Redis 전체 장애 시에도 캐시 예외가 MySQL fallback으로 격리되는지를 별도로 확인한다.
+
+### 확인 명령
+
+```bash
+docker compose up -d redis-master redis-replica redis-sentinel-1 redis-sentinel-2 redis-sentinel-3
+scripts/redis/verify-sentinel-failover.sh
+```
+
+스크립트는 `SENTINEL CKQUORUM`, 장애 전후 `GET-MASTER-ADDR-BY-NAME`, 각 노드의 `INFO replication`, Sentinel의 감지·승격 로그를 출력한다. 애플리케이션을 Sentinel 설정으로 실행한 뒤에는 `-Dredis.integration.test=true`로 Cache Hit/Miss/TTL 및 Sentinel 연결을, Redis를 모두 중지한 상태에서는 `-Dredis.failure.test=true`로 MySQL fallback을 확인한다.
+
+### 해석과 제한
+
+Sentinel의 장애 감지·승격·클라이언트 재연결 동안 요청이 지연되거나 일부 실패할 수 있다. 캐시 조회·저장 예외가 `PopularMenuCache`에서 잡혀 MySQL 결과를 반환하면 캐시 장애가 주문·포인트로 전파되지 않는다. Redis 복제는 비동기이므로 Failover 직전 캐시 Key가 유실될 수 있으나, 다음 Cache Miss에서 MySQL 집계로 재생성한다.
+
+Redis Cluster, 샤딩, 운영 수준 백업·복구, Redis 분산락은 이 Issue 범위에 포함하지 않는다.
+
+### 2026-07-18 직접 검증 결과
+
+- Sentinel 3개 healthy와 `CKQUORUM coffee-order-redis` 성공을 확인했다.
+- Master 중지 뒤 Replica 승격, `+promoted-slave`·`+switch-master`, app-ha의 새 Master 재연결을 확인했다.
+- Redis 전체 장애 중 인기 메뉴 API는 MySQL 결과로 200을 반환했고, 포인트 충전·주문은 MySQL의 지갑·이력·주문 데이터를 정상 갱신했다.
+- 기본 Lettuce 공유 연결은 전체 Redis 복구 뒤 이전 연결을 재사용하며 약 43초간 timeout을 반복했다. `redis-ha` 프로필에서만 `validateConnection`을 켠 뒤 app-ha 재시작 없이 첫 요청에서 Key 재생성과 TTL 86400을 확인했다.
+
 ## 기록 양식
 
 ### 문제

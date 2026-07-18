@@ -44,10 +44,10 @@ Codex는 승인된 Issue를 구현·검증하고 Draft PR을 만든다.
 ./gradlew bootRun
 ```
 
-### v3 MySQL Primary-Replica 실행
+### v3 MySQL Primary-Replica·Redis Sentinel 실행
 
 ```bash
-docker compose up -d mysql-primary mysql-replica redis
+docker compose up -d mysql-primary mysql-replica redis-master redis-replica redis-sentinel-1 redis-sentinel-2 redis-sentinel-3
 docker compose exec mysql-replica sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW REPLICA STATUS\\G"'
 ```
 
@@ -55,6 +55,9 @@ docker compose exec mysql-replica sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -
 - 쓰기 트랜잭션과 비관적 락 조회는 Primary에 고정된다. `@Transactional(readOnly = true)`인 메뉴·인기 메뉴 조회만 Replica 후보이며, 트랜잭션 밖의 조회는 안전하게 Primary를 사용한다.
 - Replica 장애 시 자동 Primary fallback은 구현하지 않는다. 따라서 Replica 대상 메뉴·인기 메뉴 HTTP 경로의 오류 응답과 주문·포인트 HTTP 경로의 지속 처리는 별도 직접 검증이 필요하다.
 - 초기화 스크립트는 빈 Docker volume에서만 실행된다. 복제 구성을 처음부터 다시 만들려면 데이터가 삭제되는 `docker compose down -v`가 필요하므로, 기존 로컬 데이터가 있으면 실행 전에 백업 여부를 판단한다.
+- Redis는 Master `localhost:6379`, Replica `localhost:6380`, Sentinel `localhost:26379~26381`로 구성한다. 애플리케이션은 Sentinel 3개와 master name `coffee-order-redis`를 통해 현재 Master를 찾는다.
+- 장애 전환은 `scripts/redis/verify-sentinel-failover.sh`로 확인한다. 이 스크립트는 Master를 중지·복구하므로 로컬 개발용 Compose 환경에서만 실행한다.
+- Redis가 모두 중지돼도 인기 메뉴 API는 MySQL 집계 결과를 반환한다. 전환 중 지연이나 일시 실패가 없다고 보장하지 않으며, 주문·포인트는 Redis를 사용하지 않는다.
 
 테스트 실행:
 
