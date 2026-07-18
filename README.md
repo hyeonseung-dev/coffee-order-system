@@ -44,10 +44,33 @@ Codex는 승인된 Issue를 구현·검증하고 Draft PR을 만든다.
 ./gradlew bootRun
 ```
 
-### v3 MySQL Primary-Replica 실행
+`bootRun`은 기본 Redis host/port 설정을 사용하며 Sentinel HA 검증 프로필을 활성화하지 않는다. 일반 `docker compose up -d`도 `redis-ha` profile 서비스(Replica, Sentinel, app-ha)를 기동하지 않는다.
+
+### Redis HA 로컬 검증
 
 ```bash
-docker compose up -d mysql-primary mysql-replica redis
+docker compose --profile redis-ha up -d --build app-ha
+curl http://localhost:18080/api/menus/popular
+docker compose exec redis-sentinel-1 redis-cli -p 26379 SENTINEL CKQUORUM coffee-order-redis
+docker compose exec redis-sentinel-1 redis-cli -p 26379 SENTINEL GET-MASTER-ADDR-BY-NAME coffee-order-redis
+scripts/redis/verify-sentinel-failover.sh
+docker compose --profile redis-ha down
+```
+
+`app-ha`는 Docker 내부 서비스 hostname으로 Sentinel을 찾고, API는 `http://localhost:18080`으로 확인한다. Redis·Sentinel·app-ha 포트는 `127.0.0.1`에만 게시된다. 복구 검증에서는 app-ha를 재시작하지 않는다. `docker compose down -v`는 Docker volume의 데이터를 삭제하므로 별도 판단 후 사용한다.
+
+Sentinel 전용 통합 테스트는 일반 `./gradlew test`와 분리되어 있으며, Redis·Sentinel과 같은 Docker network에서 실행한다.
+
+```bash
+docker compose --profile redis-ha-test run --rm redis-ha-integration-test
+```
+
+로컬 Redis 포트 충돌 시에는 `REDIS_PORT=16379 REDIS_REPLICA_PORT=16380 REDIS_SENTINEL_1_PORT=36379 REDIS_SENTINEL_2_PORT=36380 REDIS_SENTINEL_3_PORT=36381`를 앞에 지정해 격리할 수 있다.
+
+### v3 MySQL Primary-Replica·Redis Sentinel 실행
+
+```bash
+docker compose up -d mysql-primary mysql-replica redis-master redis-replica redis-sentinel-1 redis-sentinel-2 redis-sentinel-3
 docker compose exec mysql-replica sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -e "SHOW REPLICA STATUS\\G"'
 ```
 
@@ -55,6 +78,9 @@ docker compose exec mysql-replica sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" -
 - 쓰기 트랜잭션과 비관적 락 조회는 Primary에 고정된다. `@Transactional(readOnly = true)`인 메뉴·인기 메뉴 조회만 Replica 후보이며, 트랜잭션 밖의 조회는 안전하게 Primary를 사용한다.
 - Replica 장애 시 자동 Primary fallback은 구현하지 않는다. 따라서 Replica 대상 메뉴·인기 메뉴 HTTP 경로의 오류 응답과 주문·포인트 HTTP 경로의 지속 처리는 별도 직접 검증이 필요하다.
 - 초기화 스크립트는 빈 Docker volume에서만 실행된다. 복제 구성을 처음부터 다시 만들려면 데이터가 삭제되는 `docker compose down -v`가 필요하므로, 기존 로컬 데이터가 있으면 실행 전에 백업 여부를 판단한다.
+- Redis는 Master `localhost:6379`, Replica `localhost:6380`, Sentinel `localhost:26379~26381`로 구성한다. 애플리케이션은 Sentinel 3개와 master name `coffee-order-redis`를 통해 현재 Master를 찾는다.
+- 장애 전환은 `scripts/redis/verify-sentinel-failover.sh`로 확인한다. 이 스크립트는 Master를 중지·복구하므로 로컬 개발용 Compose 환경에서만 실행한다.
+- Redis가 모두 중지돼도 인기 메뉴 API는 MySQL 집계 결과를 반환한다. 전환 중 지연이나 일시 실패가 없다고 보장하지 않으며, 주문·포인트는 Redis를 사용하지 않는다.
 
 테스트 실행:
 

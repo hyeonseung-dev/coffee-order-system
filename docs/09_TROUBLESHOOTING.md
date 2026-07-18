@@ -2,6 +2,53 @@
 
 프로젝트 진행 중 발생한 문제와 해결 과정을 기록한다.
 
+## Issue #44 — Redis Sentinel Failover와 MySQL Fallback 확인 절차
+
+### 목적
+
+인기 메뉴의 정답 데이터는 MySQL `orders`이며 Redis는 Cache-Aside 결과 캐시다. 따라서 Redis Master 장애 시 Sentinel이 Replica를 승격하는지, Redis 전체 장애 시에도 캐시 예외가 MySQL fallback으로 격리되는지를 별도로 확인한다.
+
+### 확인 명령
+
+```bash
+docker compose up -d redis-master redis-replica redis-sentinel-1 redis-sentinel-2 redis-sentinel-3
+scripts/redis/verify-sentinel-failover.sh
+```
+
+스크립트는 `SENTINEL CKQUORUM`, 장애 전후 `GET-MASTER-ADDR-BY-NAME`, 각 노드의 `INFO replication`, Sentinel의 감지·승격 로그를 검증한다. 일반 `./gradlew test`는 외부 Sentinel을 요구하지 않으며, Sentinel 연결·Cache Miss/Hit/TTL 재생성은 Docker network 안의 전용 서비스로 실행한다.
+
+```bash
+docker compose --profile redis-ha-test run --rm redis-ha-integration-test
+```
+
+### 해석과 제한
+
+Sentinel의 장애 감지·승격·클라이언트 재연결 동안 요청이 지연되거나 일부 실패할 수 있다. 캐시 조회·저장 예외가 `PopularMenuCache`에서 잡혀 MySQL 결과를 반환하면 캐시 장애가 주문·포인트로 전파되지 않는다. Redis 복제는 비동기이므로 Failover 직전 캐시 Key가 유실될 수 있으나, 다음 Cache Miss에서 MySQL 집계로 재생성한다.
+
+Redis Cluster, 샤딩, 운영 수준 백업·복구, Redis 분산락은 이 Issue 범위에 포함하지 않는다.
+
+일반 `./gradlew test`는 외부 Redis 없이 실행한다. Sentinel HA 통합 테스트는 Redis·Sentinel과 동일 Docker 네트워크에서 별도 profile로 실행해야 하며, 일반 테스트 성공을 외부 인프라 검증으로 해석하지 않는다.
+
+로컬 HA 검증은 다음 명령으로 시작한다.
+
+```bash
+docker compose --profile redis-ha up -d --build app-ha
+docker compose exec redis-sentinel-1 redis-cli -p 26379 SENTINEL CKQUORUM coffee-order-redis
+scripts/redis/verify-sentinel-failover.sh
+docker compose --profile redis-ha down
+```
+
+Compose 서비스 내부 통신은 `redis-master`, `redis-replica`, `redis-sentinel-*` hostname을 사용한다. 호스트 공개 포트는 `127.0.0.1`로 제한한다. 이 검증은 로컬 Docker 장애 재현 결과이며 운영 SLA나 절대적 무중단을 보장하지 않는다. Redis 복제는 비동기라 Failover 직전 일부 캐시 Key가 유실될 수 있고, 다음 Cache Miss에서 MySQL 원본으로 재생성한다.
+
+호스트의 기존 Redis와 포트가 충돌하면 HA 또는 Sentinel 테스트 명령 앞에 `REDIS_PORT=16379 REDIS_REPLICA_PORT=16380 REDIS_SENTINEL_1_PORT=36379 REDIS_SENTINEL_2_PORT=36380 REDIS_SENTINEL_3_PORT=36381`를 지정한다.
+
+### 2026-07-18 직접 검증 결과
+
+- Sentinel 3개 healthy와 `CKQUORUM coffee-order-redis` 성공을 확인했다.
+- Master 중지 뒤 Replica 승격, `+promoted-slave`·`+switch-master`, app-ha의 새 Master 재연결을 확인했다.
+- Redis 전체 장애 중 인기 메뉴 API는 MySQL 결과로 200을 반환했고, 포인트 충전·주문은 MySQL의 지갑·이력·주문 데이터를 정상 갱신했다.
+- 기본 Lettuce 공유 연결은 전체 Redis 복구 뒤 이전 연결을 재사용하며 약 43초간 timeout을 반복했다. `redis-ha` 프로필에서만 `validateConnection`을 켠 뒤 app-ha 재시작 없이 첫 요청에서 Key 재생성과 TTL 86400을 확인했다.
+
 ## 기록 양식
 
 ### 문제

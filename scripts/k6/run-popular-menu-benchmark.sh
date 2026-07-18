@@ -51,7 +51,14 @@ elif [[ "$scenario" == "hit" ]]; then
 else
   for run in 1 2 3; do
     echo "== Cache Miss cold request $run/3 =="
-    docker compose -f "$project_root/docker-compose.yml" exec -T redis redis-cli DEL "$cache_key"
+    master=$(docker compose -f "$project_root/docker-compose.yml" exec -T redis-sentinel-1 redis-cli -p 26379 \
+      SENTINEL GET-MASTER-ADDR-BY-NAME coffee-order-redis | head -1)
+    case "$master" in redis-master|redis-replica) ;; *) echo "Cannot map Sentinel master: $master" >&2; exit 1;; esac
+    deleted=$(docker compose -f "$project_root/docker-compose.yml" exec -T "$master" redis-cli DEL "$cache_key")
+    [[ "$deleted" == 0 || "$deleted" == 1 ]] || { echo "DEL failed: $deleted" >&2; exit 1; }
+    exists=$(docker compose -f "$project_root/docker-compose.yml" exec -T "$master" redis-cli EXISTS "$cache_key")
+    [[ "$exists" == 0 ]] || { echo "Cache key still exists: $exists" >&2; exit 1; }
+    echo "Cache key deleted from current master=$master"
     run_k6
     wait_between_runs
   done
