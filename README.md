@@ -48,7 +48,7 @@ flowchart LR
 
     App --> Cache[Popular Menu Cache]
     Cache -->|Hit| RedisMaster[(Redis Current Master)]
-    Cache -->|Miss·오류| Primary
+    Cache -->|Miss·오류: readOnly DB 조회| Replica
 
     Sentinel[Redis Sentinel x3] --> RedisMaster
     RedisMaster -. 비동기 복제 .-> RedisReplica[(Redis Replica)]
@@ -157,8 +157,8 @@ flowchart LR
 - Key: `popular:menus:7days:{KST 업무 날짜}:v1`
 - 기본 TTL: 86,400초
 - Hit: Redis 결과 반환, MySQL 집계 생략
-- Miss: MySQL 조회 후 Redis 저장
-- Redis 읽기·쓰기·직렬화 오류: 경고 로그 후 MySQL 결과 반환
+- Miss: readOnly DB 조회 후 Redis 저장
+- Redis 읽기·쓰기·직렬화 오류: 경고 로그 후 DB 결과 반환
 - 캐시 비활성화 설정: Redis를 호출하지 않는 MySQL 기준선 측정에 사용
 
 K6 조건은 30 VU, 10초 워밍업, 30초 본 측정, 각 3회다.
@@ -210,7 +210,7 @@ Cache Miss는 첫 요청 뒤 Hit로 바뀌므로 1 VU·1 iteration의 cold reque
 - Master 장애 감지와 Replica 승격
 - 애플리케이션의 새 Master 재연결
 - 연속 두 번의 Failover 스크립트 성공
-- Redis·Sentinel 전체 중지 중 인기 메뉴 HTTP 200과 MySQL fallback
+- Redis·Sentinel 전체 중지 중 인기 메뉴 HTTP 200과 DB fallback
 - 같은 장애 중 포인트 충전·주문 HTTP 200 및 MySQL 상태 확인
 - Redis 복구 후 애플리케이션 재시작 없이 캐시 재생성
 - 공유 연결 검증 적용 전 약 43초였던 로컬 복구 지연이 적용 후 첫 요청 0초로 확인
@@ -338,6 +338,6 @@ docker compose --profile redis-ha-test run --rm redis-ha-integration-test
 - 외부 Consumer의 `eventId` 멱등 저장소가 없어 Exactly Once를 보장하지 않는다.
 - Replica 장애 시 읽기 요청의 자동 Primary fallback과 HTTP 오류 규격은 구현하지 않았다.
 - MySQL Primary 자동 Failover, ProxySQL·HAProxy·Orchestrator는 제외했다.
-- Redis Failover 직전 비동기 복제가 끝나지 않은 캐시는 유실될 수 있으며 다음 Miss에서 MySQL로 재구축한다.
+- Redis Failover 직전 비동기 복제가 끝나지 않은 캐시는 유실될 수 있으며 다음 Miss에서 DB 조회로 재구축한다.
 - Cache Stampede, 과거 주문 수정에 대한 즉시 캐시 무효화, 운영 규모 성능은 미검증이다.
 - 인증·인가, 실제 PG, RabbitMQ·Kafka, MSA·Kubernetes는 과제 핵심 문제와 시간 대비 효율을 고려해 제외했다.
