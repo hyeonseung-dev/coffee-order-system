@@ -1,6 +1,6 @@
 # Coffee Order System
 
-> 다중 애플리케이션 인스턴스 환경을 고려해 포인트 정합성, 조회 성능, 장애 격리와 후속 처리 신뢰성을 단계적으로 검증한 커피 주문 시스템
+> 다중 애플리케이션 인스턴스에서도 공유되는 MySQL 원본과 DB 락을 고려해 설계하고, 로컬 환경에서 포인트 정합성·조회 성능·장애 격리·후속 처리 신뢰성을 단계적으로 검증한 커피 주문 시스템
 
 ## 한눈에 보는 프로젝트 결과
 
@@ -11,7 +11,7 @@
 | 인기 메뉴 SQL | 최근 7일 TOP 3 집계 성능 | 실제 JPQL 기준 복합 인덱스 | 50만 건 격리 측정에서 중앙값 179.0ms → 66.0ms |
 | Redis 캐시 | 반복 집계로 인한 DB 조회 부하 | MySQL 원본 + Redis Cache-Aside | Hit·Miss·TTL·직렬화 실패·Redis 장애 fallback 검증 |
 | API 성능 | MySQL 직접 조회와 Cache Hit 차이 | K6 30 VU, 워밍업·본 측정 분리 | 평균 16.4% 감소, p95 18.4% 감소, RPS 19.6% 증가 |
-| 후속 처리 | 외부 전송 실패·서버 종료 시 이벤트 유실 | Transactional Outbox | 주문과 `PENDING` 이벤트 원자 저장, 재시도·상태 관리 검증 |
+| 후속 처리 | 메모리 기반 비동기 처리의 이벤트 유실 위험 | Transactional Outbox | 주문과 `PENDING` 이벤트 원자 저장, 상태 전이·재시도 검증 |
 | MySQL 확장 | 읽기 부하 분리와 복제 지연 위험 | Primary·Replica + 트랜잭션 기반 라우팅 | readOnly 조회는 Replica, 쓰기·락은 Primary, stale read 재현 |
 | Redis 가용성 | Master 장애와 Redis 전체 장애 | Master·Replica·Sentinel 3대 + DB fallback | 자동 승격·재연결, 전체 장애 중 인기 메뉴·주문·충전 기능 유지 확인 |
 | 개발 프로세스 | AI 구현의 누락·과잉 자동화 위험 | Issue 계약·증거 추적·Human 승인 | 실제 누락을 발견하고 역할과 리뷰 Gate를 단계적으로 수정 |
@@ -42,13 +42,14 @@
 flowchart LR
     Client[Client] --> App[Spring Boot Application]
 
-    App -->|쓰기·락·트랜잭션 밖 조회| Primary[(MySQL Primary)]
-    App -->|활성 readOnly 트랜잭션| Replica[(MySQL Replica)]
+    App -->|Repository 호출 시| Routing[RoutingDataSource]
+    Routing -->|쓰기·락·트랜잭션 밖 조회| Primary[(MySQL Primary)]
+    Routing -->|활성 readOnly 트랜잭션| Replica[(MySQL Replica)]
     Primary -. 비동기 복제 .-> Replica
 
     App --> Cache[Popular Menu Cache]
     Cache -->|Hit| RedisMaster[(Redis Current Master)]
-    Cache -->|Miss·오류: readOnly DB 조회| Replica
+    Cache -->|Miss·오류: DB Supplier 실행| Routing
 
     Sentinel[Redis Sentinel x3] --> RedisMaster
     RedisMaster -. 비동기 복제 .-> RedisReplica[(Redis Replica)]
@@ -91,8 +92,9 @@ flowchart LR
 
 ### 시간 정책
 
-- DB 저장 시각: UTC `Instant`
-- JDBC·Hibernate 세션 시간대: UTC
+- 애플리케이션 주문 시각 타입: UTC `Instant`
+- JDBC·Hibernate 저장·조회 기준: UTC
+- DB `ordered_at` 값: UTC 의미로 저장·해석
 - 인기 메뉴 집계와 캐시 업무 날짜: `Asia/Seoul`
 - 집계 범위: 오늘을 제외한 직전 7개 완료 일자, 시작 포함·종료 제외
 
@@ -102,10 +104,10 @@ flowchart LR
 
 | 선택 | 이유 | 선택하지 않은 대안·한계 |
 |---|---|---|
-| DB 비관적 락 | 보호 대상이 MySQL `point_wallet.balance`이고 모든 App 인스턴스가 같은 Primary를 사용 | Redis 분산락은 원본 행 변경과 별도 실패 지점을 만들며 현재 문제에 과도함 |
+| DB 비관적 락 | 보호 대상이 MySQL `point_wallet.balance`이며 여러 App 인스턴스도 같은 Primary의 row lock을 공유하는 구조 | Redis 분산락은 원본 행 변경과 별도 실패 지점을 만들며 현재 문제에 과도함. 실제 다중 App 처리량은 미검증 |
 | MySQL 집계 + Redis Cache-Aside | 정확성은 `orders`, 성능은 Redis로 책임 분리 | Redis ZSet은 DB·Redis 이중 쓰기, 기간 만료, 보정·재구축 책임이 추가됨 |
 | `(menu_id, ordered_at, status)` | 실제 LEFT JOIN의 `menu_id` 경로와 covering 조건에 맞고 격리 측정 결과가 가장 낮음 | 상태 분포가 바뀌면 `(menu_id, status, ordered_at)`과 재측정 필요 |
-| Transactional Outbox | 주문과 이벤트를 한 DB 트랜잭션으로 저장해 서버 종료·Executor 포화 후에도 재시도 가능 | 외부 전송 성공 후 `SENT` 반영 전 장애 시 중복 가능. Exactly Once 미보장 |
+| Transactional Outbox | 주문과 이벤트를 한 DB 트랜잭션으로 저장하고 Commit된 `PENDING` 이벤트를 Publisher가 다시 조회할 수 있게 함 | 외부 전송 성공 후 `SENT` 반영 전 장애 시 중복 가능. Exactly Once 미보장 |
 | Spring RoutingDataSource | 트랜잭션의 readOnly 속성과 JPA 경로를 유지하며 읽기·쓰기를 분리 | ProxySQL·HAProxy·자동 DB Failover는 과제 범위를 넘으므로 제외 |
 | Redis Sentinel | 단순 Master-Replica에 없는 자동 장애 판단·승격·Master 탐색 제공 | 무중단이나 데이터 무손실을 절대 보장하지 않음 |
 
@@ -335,6 +337,7 @@ docker compose --profile redis-ha-test run --rm redis-ha-integration-test
 ## 10. 알려진 한계와 후속 개선
 
 - Outbox Publisher는 단일 애플리케이션 인스턴스를 전제로 하며 멀티 인스턴스 선점 경쟁을 처리하지 않는다.
+- 실제 애플리케이션 프로세스 강제 종료·재시작 후 Outbox 전송 재개 E2E는 검증하지 않았다.
 - 외부 Consumer의 `eventId` 멱등 저장소가 없어 Exactly Once를 보장하지 않는다.
 - Replica 장애 시 읽기 요청의 자동 Primary fallback과 HTTP 오류 규격은 구현하지 않았다.
 - MySQL Primary 자동 Failover, ProxySQL·HAProxy·Orchestrator는 제외했다.
