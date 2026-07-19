@@ -1,42 +1,25 @@
 # API 명세서
 
-이 문서는 포인트 기반 커피 주문 시스템의 v0 필수 API를 정의한다.
+이 문서는 포인트 기반 커피 주문 시스템의 외부 HTTP 계약을 정의한다.
 
-현재 단계에서는 실제 PG/포트원 연동을 하지 않고, 사용자의 보유 포인트를 차감하는 방식으로 주문/결제를 처리한다. Redis, RabbitMQ, MySQL Replication은 현재 API 구현의 필수 전제가 아니며, 이후 단계의 도전 과제로 분리한다.
+- 실제 PG·포트원은 연동하지 않고 보유 포인트로 결제한다.
+- MySQL Primary·Replica와 Redis Sentinel은 내부 인프라 구현이며 API 요청·응답 형식을 변경하지 않는다.
+- Redis는 인기 메뉴 캐시이며 정확성 원본은 MySQL `orders`다.
+- 주문 완료 후속 처리는 현재 Transactional Outbox를 사용한다.
 
 ---
 
-## 1. 커피 메뉴 목록 조회 API
+## 1. 커피 메뉴 목록 조회
 
-### API 이름
+### 요청
 
-커피 메뉴 목록 조회
+```http
+GET /api/menus
+```
 
-### Method
+Path Variable, Query Parameter, Request Body는 없다.
 
-`GET`
-
-### Endpoint
-
-`/api/menus`
-
-### Description
-
-주문 가능한 커피 메뉴 목록을 조회한다.
-
-### Path Variable
-
-없음
-
-### Query Parameter
-
-없음
-
-### Request Body
-
-없음
-
-### Response Body
+### 성공 응답
 
 ```json
 {
@@ -55,53 +38,37 @@
 }
 ```
 
-### Error Response
-
-현재 단계에서 별도 비즈니스 예외는 정의하지 않는다.
-
 ### 비즈니스 규칙
 
-- 메뉴 목록 조회는 포인트 잔액이나 주문 상태를 변경하지 않는다.
-- 메뉴 응답에는 `menuId`, `name`, `price`를 포함한다.
-- v3 읽기/쓰기 분리 단계에서는 Replica 조회 대상으로 검토할 수 있다.
+- `ACTIVE` 메뉴만 반환한다.
+- 메뉴 ID 오름차순으로 반환한다.
+- 응답 DTO는 `menuId`, `name`, `price`를 포함한다.
+- 메뉴가 없으면 예외가 아니라 빈 배열을 반환한다.
+- 데이터 변경을 수행하지 않는다.
+- 활성 readOnly 트랜잭션으로 실행되어 MySQL Replica 조회 대상이다.
 
 ### 검증 포인트
 
-- 응답 데이터에 메뉴 식별값, 이름, 가격이 포함되는지 확인한다.
-- 비활성 메뉴 노출 여부는 구현 단계의 정책으로 명확히 결정한다.
-- 조회 API가 데이터 변경을 수행하지 않는지 확인한다.
+- ACTIVE 메뉴만 노출되는가?
+- ID 순서가 유지되는가?
+- Entity가 직접 노출되지 않는가?
+- 0건일 때 `data: []`인가?
 
 ---
 
-## 2. 포인트 충전 API
+## 2. 포인트 충전
 
-### API 이름
+### 요청
 
-포인트 충전
+```http
+POST /api/users/{userId}/points/charge
+Content-Type: application/json
+```
 
-### Method
-
-`POST`
-
-### Endpoint
-
-`/api/users/{userId}/points/charge`
-
-### Description
-
-사용자 식별값을 기준으로 포인트를 충전한다.
-
-### Path Variable
-
-| 이름 | 타입 | 필수 여부 | 설명 |
-| --- | --- | --- | --- |
-| `userId` | Long | 필수 | 포인트를 충전할 사용자 ID |
-
-### Query Parameter
-
-없음
-
-### Request Body
+| 이름 | 위치 | 타입 | 필수 | 설명 |
+|---|---|---|---|---|
+| `userId` | Path | Long | 예 | 충전 대상 사용자 ID |
+| `amount` | Body | Long | 예 | 충전 금액, 0보다 커야 함 |
 
 ```json
 {
@@ -109,7 +76,7 @@
 }
 ```
 
-### Response Body
+### 성공 응답
 
 ```json
 {
@@ -121,7 +88,7 @@
 }
 ```
 
-### Error Response
+### 오류 응답 예시
 
 ```json
 {
@@ -137,50 +104,39 @@
 }
 ```
 
+```json
+{
+  "code": "POINT_WALLET_NOT_FOUND",
+  "message": "포인트 지갑을 찾을 수 없습니다."
+}
+```
+
 ### 비즈니스 규칙
 
 - `amount`는 0보다 커야 한다.
-- 사용자 식별값이 필요하다.
+- Primary MySQL의 사용자 지갑 행을 비관적 쓰기 락으로 조회한다.
 - 충전 성공 시 `point_wallet.balance`가 증가한다.
-- 충전 이력은 `point_history`에 `CHARGE` 타입으로 저장한다.
-- 포인트 잔액 변경은 원본 저장소인 MySQL 기준으로 처리한다.
+- `point_history`에 `CHARGE`, 충전 금액, 반영 후 잔액을 저장한다.
+- 지갑 변경과 이력 저장은 하나의 트랜잭션에서 처리한다.
+- 충전은 Redis와 Replica에 의존하지 않는다.
 
 ### 검증 포인트
 
-- 존재하지 않는 사용자 요청은 실패해야 한다.
-- 0 이하의 충전 금액은 실패해야 한다.
-- 충전 성공 후 잔액이 요청 금액만큼 증가해야 한다.
-- 충전 성공 후 `point_history`에 `CHARGE` 이력이 남아야 한다.
+- 존재하지 않는 사용자·지갑 요청은 실패하는가?
+- 0 이하 금액은 실패하는가?
+- 잔액과 `CHARGE` 이력이 함께 반영되는가?
+- 실패 시 일부 데이터만 남지 않는가?
 
 ---
 
-## 3. 커피 주문/결제 API
+## 3. 커피 주문·결제
 
-### API 이름
+### 요청
 
-커피 주문/결제
-
-### Method
-
-`POST`
-
-### Endpoint
-
-`/api/orders`
-
-### Description
-
-사용자가 보유한 포인트로 커피 메뉴 1개를 주문하고 결제한다.
-
-### Path Variable
-
-없음
-
-### Query Parameter
-
-없음
-
-### Request Body
+```http
+POST /api/orders
+Content-Type: application/json
+```
 
 ```json
 {
@@ -189,7 +145,7 @@
 }
 ```
 
-### Response Body
+### 성공 응답
 
 ```json
 {
@@ -204,7 +160,9 @@
 }
 ```
 
-### Error Response
+`orderedAt`은 DB의 UTC `Instant`를 `Asia/Seoul`로 변환한 응답 시각이다.
+
+### 오류 응답 예시
 
 ```json
 {
@@ -234,63 +192,62 @@
 }
 ```
 
+```json
+{
+  "code": "POINT_WALLET_NOT_FOUND",
+  "message": "포인트 지갑을 찾을 수 없습니다."
+}
+```
+
 ### 비즈니스 규칙
 
-- 수량은 1개 고정이다.
-- 하나의 주문은 하나의 메뉴만 주문한다.
-- 주문 실패 시 `orders`에 저장하지 않는다.
-- 성공한 주문만 `orders`에 저장한다.
-- 포인트가 부족하면 주문은 실패한다.
-- 주문 성공 시 `point_wallet.balance`를 차감한다.
-- 주문 성공 시 `point_history`에 `USE` 타입으로 저장한다.
-- 주문 성공 시 `OrderCompletedEvent` 발행 대상으로 본다.
-- 실제 PG/포트원 연동은 하지 않는다.
-- 잔액 검증, 포인트 차감, 포인트 사용 이력 저장, 주문 저장은 하나의 트랜잭션에서 처리한다.
+- 수량은 1개로 고정한다.
+- 하나의 주문은 하나의 메뉴만 참조한다.
+- ACTIVE 메뉴만 주문할 수 있다.
+- 주문 가능 여부는 Primary의 최신 `point_wallet.balance`로 판단한다.
+- 지갑 행을 `PESSIMISTIC_WRITE`로 잠근 뒤 잔액을 검증·차감한다.
+- 성공 시 `point_history`에 `USE` 이력을 저장한다.
+- 성공한 주문만 `orders`에 `COMPLETED`로 저장한다.
+- 주문 시각은 UTC `Instant`로 저장한다.
+- 주문 완료 Outbox 이벤트를 `PENDING` 상태로 같은 트랜잭션에 저장한다.
+- 잔액 차감, `USE` 이력, 주문, Outbox는 함께 Commit 또는 Rollback한다.
+- 외부 데이터 플랫폼 전송은 Commit 이후 별도 Publisher가 처리한다.
+- 실제 PG는 연동하지 않는다.
+
+### 내부 트랜잭션 흐름
+
+```text
+사용자 조회
+→ 메뉴 조회·ACTIVE 검증
+→ Primary 지갑 PESSIMISTIC_WRITE 조회
+→ 잔액 검증·차감
+→ USE 이력 저장
+→ COMPLETED 주문 저장
+→ Outbox PENDING 저장
+→ Commit
+```
 
 ### 검증 포인트
 
-- 존재하지 않는 사용자의 주문은 실패해야 한다.
-- 존재하지 않는 메뉴의 주문은 실패해야 한다.
-- 비활성 메뉴의 주문은 실패해야 한다.
-- 잔액이 메뉴 가격보다 적으면 주문은 실패해야 한다.
-- 주문 실패 시 `orders`와 `point_history`에 사용 이력이 저장되지 않아야 한다.
-- 주문 성공 시 잔액이 메뉴 가격만큼 차감되어야 한다.
-- 주문 성공 시 `orders`에는 성공 주문만 저장되어야 한다.
-- Issue #8에서는 단일 요청의 트랜잭션 원자성과 실패 시 전체 Rollback을 검증한다. 동시 주문 문제 재현은 #10, DB 비관적 락 적용과 정합성 검증은 #11에서 수행한다.
+- 사용자·메뉴·지갑 없음과 비활성 메뉴가 실패하는가?
+- 잔액 부족 시 지갑·USE 이력·주문·Outbox가 모두 원상태인가?
+- 주문 성공 시 잔액, 주문, USE 이력과 Outbox 수가 일치하는가?
+- 동일 사용자 10개 동시 요청에서 성공 3, 실패 7, 잔액 1,000P인가?
+- Outbox Payload 생성 또는 저장 실패 시 주문 전체가 Rollback되는가?
 
 ---
 
-## 4. 최근 7일 인기 메뉴 TOP 3 조회 API
+## 4. 최근 7일 인기 메뉴 TOP 3
 
-### API 이름
+### 요청
 
-최근 7일 인기 메뉴 TOP 3 조회
+```http
+GET /api/menus/popular
+```
 
-### Method
+Path Variable, Query Parameter, Request Body는 없다.
 
-`GET`
-
-### Endpoint
-
-`/api/menus/popular`
-
-### Description
-
-오늘을 제외한 직전 7개 완료 일자의 완료 주문을 기준으로 인기 메뉴 TOP 3를 조회한다.
-
-### Path Variable
-
-없음
-
-### Query Parameter
-
-없음
-
-### Request Body
-
-없음
-
-### Response Body
+### 성공 응답
 
 ```json
 {
@@ -314,27 +271,75 @@
 }
 ```
 
-### Error Response
-
-현재 단계에서 별도 비즈니스 예외는 정의하지 않는다.
-
 ### 비즈니스 규칙
 
-- 집계 기준 시간대는 `Asia/Seoul`이며, 범위는 오늘의 7일 전 `00:00` 이상, 오늘 `00:00` 미만이다.
+- 기준 시간대는 `Asia/Seoul`이다.
+- 범위는 오늘의 7일 전 `00:00` 이상, 오늘 `00:00` 미만이다.
+- 오늘 진행 중인 주문은 포함하지 않는다.
 - `COMPLETED` 주문만 집계한다.
-- `ACTIVE` 메뉴만 순위 후보에 포함한다.
-- 기간 내 주문이 없는 ACTIVE 메뉴도 `orderCount: 0`으로 후보에 포함한다.
-- 정렬은 `orderCount` 내림차순, 동률이면 `menuId` 오름차순이다.
-- ACTIVE 메뉴가 3개 미만이면 존재하는 메뉴만 반환하고, 없으면 빈 배열을 반환한다.
-- `orders` 테이블을 원본 데이터로 사용한다.
-- 메뉴별 주문 횟수가 정확해야 한다.
-- Redis는 v2에서 캐시로만 사용한다.
-- Redis를 원본 랭킹 저장소로 사용하지 않는다.
-- 주문 실패 건은 `orders`에 저장되지 않으므로 집계 대상에서 제외된다.
+- `ACTIVE` 메뉴만 순위 후보다.
+- 주문 0건 ACTIVE 메뉴도 `orderCount: 0`으로 후보에 포함한다.
+- `orderCount` 내림차순, 동률이면 `menuId` 오름차순이다.
+- ACTIVE 메뉴가 3개 미만이면 존재하는 메뉴만 반환한다.
+- 후보가 없으면 빈 배열을 반환한다.
+- `orderCount`는 Long 숫자로 반환한다.
+- 정확한 원본은 MySQL `orders`다.
+
+### 캐시 정책
+
+```text
+Key: popular:menus:7days:{KST businessDate}:v1
+기본 TTL: 86,400초
+```
+
+- Hit: Redis 결과 반환, MySQL 집계 생략
+- Miss: MySQL 조회 후 Redis 저장
+- Redis 조회·저장·역직렬화 실패: 경고 로그 후 MySQL 결과 반환
+- 캐시가 비활성화되면 Redis를 호출하지 않고 MySQL을 조회
+- Redis를 원본 랭킹 저장소로 사용하지 않음
+
+### MySQL Replica·장애 정책
+
+- 활성 readOnly 트랜잭션이므로 정상 구성에서는 Replica 조회 대상이다.
+- Replica는 비동기 복제로 stale할 수 있다.
+- Replica 장애 시 자동 Primary fallback은 구현하지 않았다.
+- Redis 장애 fallback의 MySQL 조회도 현재 readOnly 라우팅 정책을 따르므로 Replica 연결 상태의 영향을 받을 수 있다.
+- Redis 전체 장애 중 정상 Replica 환경에서 MySQL 결과 반환은 직접 검증했다.
 
 ### 검증 포인트
 
-- 시작 경계는 포함하고 종료 경계는 제외하는지 확인한다.
-- ACTIVE/INACTIVE 메뉴 정책, 주문 0건 메뉴, 전체 주문 0건을 확인한다.
-- 주문 수 정렬과 동률 시 메뉴 ID 정렬을 확인한다.
-- 응답의 `orderCount`가 Long 숫자로 반환되는지 확인한다.
+- 시작 경계 포함·종료 경계 제외인가?
+- ACTIVE/INACTIVE, COMPLETED 조건이 정확한가?
+- 주문 0건 메뉴와 전체 0건을 처리하는가?
+- 주문 수와 동률 정렬이 결정적인가?
+- Cache Hit에서 DB Supplier가 호출되지 않는가?
+- TTL 만료 후 다시 MySQL을 조회하고 Key를 재생성하는가?
+- Redis 장애가 HTTP 기능 전체 장애가 되지 않는가?
+
+---
+
+## 5. 공통 오류 계약
+
+비즈니스 오류 응답은 다음 구조를 사용한다.
+
+```json
+{
+  "code": "ERROR_CODE",
+  "message": "사용자에게 전달할 오류 메시지"
+}
+```
+
+정확한 HTTP Status와 ErrorCode 매핑은 `GlobalExceptionHandler`, `BusinessException`, `ErrorCode` 구현을 따른다.
+
+## 6. API 외부 계약과 내부 인프라의 분리
+
+다음 내부 개선은 API Method·Endpoint·정상 응답 필드를 변경하지 않는다.
+
+- 지갑 비관적 락
+- 인기 메뉴 복합 인덱스
+- Redis Cache-Aside
+- Transactional Outbox
+- MySQL Primary·Replica 라우팅
+- Redis Sentinel Failover
+
+인프라 장애 시 오류 가능성과 fallback 정책은 달라질 수 있으므로 운영 계약으로 확정하려면 별도 HTTP 장애 시나리오 테스트가 필요하다.
