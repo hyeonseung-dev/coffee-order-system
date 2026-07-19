@@ -344,3 +344,47 @@ docker compose --profile redis-ha-test run --rm redis-ha-integration-test
 - Redis Failover 직전 비동기 복제가 끝나지 않은 캐시는 유실될 수 있으며 다음 Miss에서 DB 조회로 재구축한다.
 - Cache Stampede, 과거 주문 수정에 대한 즉시 캐시 무효화, 운영 규모 성능은 미검증이다.
 - 인증·인가, 실제 PG, RabbitMQ·Kafka, MSA·Kubernetes는 과제 핵심 문제와 시간 대비 효율을 고려해 제외했다.
+
+## 11. 트러블슈팅 요약
+
+자세한 내용은 [Troubleshooting](docs/09_TROUBLESHOOTING.md)을 참고한다.
+
+### 주문 저장 시각과 인기 메뉴 집계 시간대 불일치
+
+문제 제목 : JVM 기본 시간대에 따라 주문 시각과 KST 집계 경계가 달라질 수 있음  
+문제 원인 : `LocalDateTime.now()`와 KST `Clock`을 서로 다른 시간 원본으로 사용함  
+해결 방법 : 주문 시각을 주입된 `Clock` 기반 UTC `Instant`로 생성하고 집계 시 KST 업무 날짜로 변환함
+
+### Replica 조회의 오래된 데이터
+
+문제 제목 : 쓰기 직후 읽기 전용 조회에서 최신 데이터가 보이지 않을 수 있음  
+문제 원인 : MySQL Primary에서 Replica로의 비동기 복제 지연  
+해결 방법 : 쓰기·비관적 락·정합성 판단은 Primary로, 지연을 허용할 수 있는 조회만 Replica로 라우팅함
+
+### Redis 장애 복구 후 연결 지연
+
+문제 제목 : Redis 전체 복구 후 기존 연결에서 약 43초간 timeout이 반복됨  
+문제 원인 : Lettuce 공유 연결이 장애 이전 연결을 재사용함  
+해결 방법 : `redis-ha` 프로필에 연결 검증을 적용하고 Redis 오류는 MySQL fallback으로 격리함
+
+## 12. AI 리뷰 로그 요약
+
+자세한 내용은 [AI Review Log](docs/10_AI_REVIEW_LOG.md)를 참고한다.
+
+### 주문 후속 처리 개선 단계 생략
+
+리뷰 제목 : 동기 문제 재현 없이 Spring Event와 AFTER_COMMIT을 완료 조건에 포함함  
+리뷰 원인 : AI가 기존 로드맵과 선행 학습 단계를 충분히 확인하지 않음  
+반영 결과 : 동기 호출 → Spring Event → AFTER_COMMIT → `@Async` → Transactional Outbox 순서로 문제와 개선 효과를 단계별 검증함
+
+### Outbox eventId 외부 전달 누락
+
+리뷰 제목 : `eventId`가 Entity와 Payload에만 존재하고 외부 Client까지 전달되지 않음  
+리뷰 원인 : 필드 존재만 확인하고 end-to-end 계약을 PASS로 판단함  
+반영 결과 : DB 저장부터 재시도 시 Client 전달까지 동일한 `eventId`가 유지되는지 테스트로 검증함
+
+### AI와 Human 역할 충돌
+
+리뷰 제목 : Codex가 Human 이해도 답변을 평가·보완해 구현과 검증 책임이 섞임  
+리뷰 원인 : 구현 AI와 최종 리뷰·승인 역할이 명확히 분리되지 않음  
+반영 결과 : Codex 구현 → Human 이해도 작성 → ChatGPT 전체 리뷰 → Human 반영 결정 흐름으로 수정함
