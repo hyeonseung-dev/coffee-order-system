@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# 최소 로컬 보호 장치다.
+# 보호 브랜치 직접 Push와 핵심 워크플로우 파일 유실만 차단한다.
+# 테스트·빌드·리뷰 수준은 Draft PR의 GitHub Actions와 Human 리뷰에서 확인한다.
+
+block() {
+  printf 'PUSH BLOCKED: %s\n' "$1" >&2
+  exit 1
+}
+
+if ! repo_root=$(git rev-parse --show-toplevel 2>/dev/null); then
+  block 'git repository root not found'
+fi
+
+if ! branch=$(git -C "$repo_root" branch --show-current 2>/dev/null); then
+  block 'current branch not found'
+fi
+
+if [ -z "$branch" ]; then
+  block 'detached HEAD is not allowed'
+fi
+
+case "$branch" in
+  main|develop)
+    block 'direct push to protected branch is not allowed'
+    ;;
+esac
+
+required_files=(
+  "AGENTS.md"
+  "docs/05_AI_WORKFLOW.md"
+  "docs/06_CODEX_RULES.md"
+  "docs/12_EVIDENCE_GUIDE.md"
+  ".codex/skills/coffee-order-issue-loop/SKILL.md"
+  ".github/ISSUE_TEMPLATE/feature.md"
+  ".github/PULL_REQUEST_TEMPLATE.md"
+  ".github/CODE_REVIEW_TEMPLATE.md"
+  ".githooks/pre-push"
+)
+
+for file in "${required_files[@]}"; do
+  if [ ! -f "$repo_root/$file" ]; then
+    block "required workflow file not found: $file"
+  fi
+done
+
+bash -n "$repo_root/.githooks/pre-push"
+
+printf '%s\n' 'PUSH CHECK PASSED'
+printf 'Branch: %s\n' "$branch"
+printf '%s\n' 'Blocking checks: protected branch, minimum workflow files, Hook syntax'

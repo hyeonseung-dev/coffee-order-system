@@ -1,0 +1,306 @@
+{
+  "info": {
+    "_postman_id": "3d55df20-6fb2-4f3b-b5b0-v0-implemented",
+    "name": "Coffee Order System - v0 Implemented APIs",
+    "description": "Coffee Order System Postman collection. Includes implemented menu, popular menu, and point charge APIs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "unknownUserId",
+      "value": "999999",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Menus",
+      "item": [
+        {
+          "name": "GET /api/menus",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/menus",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "menus"
+              ]
+            },
+            "description": "주문 가능한 ACTIVE 메뉴 목록을 조회한다."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('response has data array', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('data');",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "});",
+                  "",
+                  "pm.test('menu response exposes only menuId, name, price when present', function () {",
+                  "  const json = pm.response.json();",
+                  "  if (json.data.length > 0) {",
+                  "    pm.expect(Object.keys(json.data[0]).sort()).to.eql(['menuId', 'name', 'price'].sort());",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/menus/popular",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/menus/popular",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "menus",
+                "popular"
+              ]
+            },
+            "description": "오늘을 제외한 직전 7개 완료 일자의 ACTIVE 메뉴 인기 TOP 3를 조회한다."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('popular menu response exposes menuId, name, orderCount when present', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json.data).to.be.an('array');",
+                  "  if (json.data.length > 0) {",
+                  "    pm.expect(Object.keys(json.data[0]).sort()).to.eql(['menuId', 'name', 'orderCount'].sort());",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Points",
+      "item": [
+        {
+          "name": "POST /api/users/{userId}/points/charge - normal",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 10000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}/points/charge",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "{{userId}}",
+                "points",
+                "charge"
+              ]
+            },
+            "description": "사용자 포인트를 정상 충전한다."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('status is 200', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('response has charge data', function () {",
+                  "  const json = pm.response.json();",
+                  "  pm.expect(json).to.have.property('data');",
+                  "  pm.expect(json.data).to.include.keys(['userId', 'chargedAmount', 'balance']);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST /api/users/{userId}/points/charge - zero amount",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}/points/charge",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "{{userId}}",
+                "points",
+                "charge"
+              ]
+            },
+            "description": "0원 충전 요청 실패를 확인한다."
+          }
+        },
+        {
+          "name": "POST /api/users/{userId}/points/charge - negative amount",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": -1000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}/points/charge",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "{{userId}}",
+                "points",
+                "charge"
+              ]
+            },
+            "description": "음수 충전 요청 실패를 확인한다."
+          }
+        },
+        {
+          "name": "POST /api/users/{userId}/points/charge - unknown user",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 10000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{unknownUserId}}/points/charge",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "{{unknownUserId}}",
+                "points",
+                "charge"
+              ]
+            },
+            "description": "존재하지 않는 사용자 충전 요청 실패를 확인한다."
+          }
+        }
+      ]
+    }
+  ]
+}

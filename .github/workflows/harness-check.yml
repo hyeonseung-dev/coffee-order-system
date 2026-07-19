@@ -1,0 +1,124 @@
+name: Harness Check
+
+on:
+  pull_request:
+    branches:
+      - develop
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - edited
+      - ready_for_review
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: harness-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  harness-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: gradle
+
+      - name: Report PR mode and optional metadata
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+        shell: bash
+        run: |
+          set -u
+
+          printf 'Draft PR: %s\n' "$PR_DRAFT"
+          printf '%s\n' 'CI runs on Draft PRs so implementation feedback is available before Ready for Review.'
+
+          if ! printf '%s\n' "$PR_BODY" | grep -Eq 'Closes[[:space:]]+#[1-9][0-9]*'; then
+            printf '%s\n' 'HARNESS WARNING: PR body does not contain "Closes #<issue>"' >&2
+          fi
+
+          if ! printf '%s\n' "$PR_BODY" | grep -Eq '위험도:[[:space:]]*`?(LOW|MEDIUM|HIGH)'; then
+            printf '%s\n' 'HARNESS WARNING: PR risk level is missing or unclear' >&2
+          fi
+
+      - name: Check minimum workflow files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          required_files='AGENTS.md
+          docs/05_AI_WORKFLOW.md
+          docs/06_CODEX_RULES.md
+          docs/12_EVIDENCE_GUIDE.md
+          .codex/skills/coffee-order-issue-loop/SKILL.md
+          .github/ISSUE_TEMPLATE/feature.md
+          .github/PULL_REQUEST_TEMPLATE.md
+          .github/CODE_REVIEW_TEMPLATE.md
+          .githooks/pre-push'
+
+          missing=0
+          while IFS= read -r file; do
+            file=$(printf '%s' "$file" | sed 's/^[[:space:]]*//')
+            if [ ! -f "$file" ]; then
+              printf 'HARNESS CHECK FAILED: missing file: %s\n' "$file" >&2
+              missing=1
+            fi
+          done <<EOF
+          $required_files
+          EOF
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Check minimal Hook syntax and permission
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          bash -n .githooks/pre-push
+
+          for file in .githooks/pre-push gradlew; do
+            if [ ! -x "$file" ]; then
+              printf 'HARNESS CHECK FAILED: executable permission required: %s\n' "$file" >&2
+              exit 1
+            fi
+          done
+
+      - name: Run Gradle tests
+        run: ./gradlew test
+
+      - name: Run Redis cache integration tests
+        run: ./gradlew test --tests com.example.coffeeordersystem.service.PopularMenuCacheRedisIntegrationTest -Dredis.integration.test=true
+
+      - name: Run Gradle build without repeating tests
+        run: ./gradlew build -x test
+
+      - name: Report CI success
+        shell: bash
+        run: |
+          printf '%s\n' 'HARNESS CI PASSED'
+          printf '%s\n' 'Blocking checks: minimum workflow files, minimal Hook syntax, executable permissions, tests, build'
