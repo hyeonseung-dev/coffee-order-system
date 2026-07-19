@@ -347,25 +347,37 @@ docker compose --profile redis-ha-test run --rm redis-ha-integration-test
 
 ## 11. 트러블슈팅 요약
 
-자세한 내용은 [Troubleshooting](docs/09_TROUBLESHOOTING.md)을 참고한다.
+자세한 내용은 [Troubleshooting](docs/09_TROUBLESHOOTING.md) 및 관련 벤치마크 문서를 참고한다.
 
-### 주문 저장 시각과 인기 메뉴 집계 시간대 불일치
+### 1. 주문 저장 시각과 인기 메뉴 집계 시간대 불일치
 
-문제 제목 : JVM 기본 시간대에 따라 주문 시각과 KST 집계 경계가 달라질 수 있음  
-문제 원인 : `LocalDateTime.now()`와 KST `Clock`을 서로 다른 시간 원본으로 사용함  
-해결 방법 : 주문 시각을 주입된 `Clock` 기반 UTC `Instant`로 생성하고 집계 시 KST 업무 날짜로 변환함
+문제 제목 : 실행 환경에 따라 주문 저장 날짜와 KST 인기 메뉴 집계 경계가 달라질 수 있음  
+문제 원인 : 주문 시각은 JVM 기본 시간대의 `LocalDateTime.now()`로 생성하고 집계는 KST `Clock`을 사용함  
+해결 방법 : 주입된 `Clock`으로 UTC `Instant`를 생성해 저장하고 인기 메뉴 집계·캐시 Key는 KST 업무 날짜로 계산함
 
-### Replica 조회의 오래된 데이터
+### 2. 주문 후속 처리 신뢰성 개선
 
-문제 제목 : 쓰기 직후 읽기 전용 조회에서 최신 데이터가 보이지 않을 수 있음  
-문제 원인 : MySQL Primary에서 Replica로의 비동기 복제 지연  
-해결 방법 : 쓰기·비관적 락·정합성 판단은 Primary로, 지연을 허용할 수 있는 조회만 Replica로 라우팅함
+문제 제목 : 외부 플랫폼의 지연·실패가 주문 처리에 영향을 주고 메모리 기반 비동기 이벤트가 유실될 수 있음  
+문제 원인 : 동기 외부 호출과 `Spring Event → AFTER_COMMIT → @Async` 구조만으로는 주문과 후속 이벤트를 원자적으로 보존할 수 없음  
+해결 방법 : 동기 호출부터 단계별로 문제를 검증한 뒤 Transactional Outbox를 적용해 주문과 `PENDING` 이벤트를 함께 저장하고 재시도·상태 전이를 관리함
 
-### Redis 장애 복구 후 연결 지연
+### 3. 인기 메뉴 조회 성능 개선
 
-문제 제목 : Redis 전체 복구 후 기존 연결에서 약 43초간 timeout이 반복됨  
-문제 원인 : Lettuce 공유 연결이 장애 이전 연결을 재사용함  
-해결 방법 : `redis-ha` 프로필에 연결 검증을 적용하고 Redis 오류는 MySQL fallback으로 격리함
+문제 제목 : 최근 7일 주문 집계를 요청마다 실행해 MySQL 조회 비용이 반복됨  
+문제 원인 : 실제 JPQL 경로와 맞지 않는 인덱스 후보를 사용하고 동일한 집계 결과를 매 요청마다 다시 계산함  
+해결 방법 : `EXPLAIN ANALYZE`로 `(menu_id, ordered_at, status)` 인덱스를 선택하고 MySQL을 원본으로 유지한 Redis Cache-Aside를 적용함
+
+### 4. Redis 고가용성과 장애 격리
+
+문제 제목 : Redis Master 장애와 전체 장애 시 인기 메뉴 캐시 조회 및 복구가 지연될 수 있음  
+문제 원인 : 단일 Redis에는 자동 Failover가 없고 장애 복구 후 Lettuce 공유 연결이 이전 연결을 재사용함  
+해결 방법 : Master·Replica와 Sentinel 3대를 구성하고 HA 프로필에 연결 검증을 적용했으며 Redis 오류 시 MySQL fallback으로 응답함
+
+### 5. MySQL 읽기 부하 분산과 복제 지연 대응
+
+문제 제목 : 모든 조회가 Primary에 집중되지만 Replica 조회는 비동기 복제 지연으로 오래된 데이터를 반환할 수 있음  
+문제 원인 : 단일 DataSource로 읽기·쓰기가 분리되지 않고 Primary와 Replica 사이의 복제가 비동기로 동작함  
+해결 방법 : `RoutingDataSource`로 readOnly 조회만 Replica에 보내고 쓰기·비관적 락·정합성 판단은 Primary에서 처리함
 
 ## 12. AI 리뷰 로그 요약
 
