@@ -2,6 +2,23 @@
 
 > 다중 애플리케이션 인스턴스에서도 공유되는 MySQL 원본과 DB 락을 고려해 설계하고, 로컬 환경에서 포인트 정합성·조회 성능·장애 격리·후속 처리 신뢰성을 단계적으로 검증한 커피 주문 시스템
 
+## 목차
+
+- [한눈에 보는 프로젝트 결과](#한눈에-보는-프로젝트-결과)
+- [1. 해결하려는 문제](#1-해결하려는-문제)
+- [2. 전체 아키텍처](#2-전체-아키텍처)
+- [3. 핵심 도메인·트랜잭션 흐름](#3-핵심-도메인트랜잭션-흐름)
+- [4. 주요 기술 선택과 대안](#4-주요-기술-선택과-대안)
+- [5. 단계별 문제 해결과 검증](#5-단계별-문제-해결과-검증)
+- [6. 성능 테스트와 개선 결과](#6-성능-테스트와-개선-결과)
+- [7. 테스트와 증거의 범위](#7-테스트와-증거의-범위)
+- [8. AI-assisted 개발과 Human 검증](#8-ai-assisted-개발과-human-검증)
+- [9. 실행·재현](#9-실행재현)
+- [10. 문서](#10-문서)
+- [11. 알려진 한계와 후속 개선](#11-알려진-한계와-후속-개선)
+- [12. 트러블슈팅 요약](#12-트러블슈팅-요약)
+- [13. AI 리뷰 로그 요약](#13-ai-리뷰-로그-요약)
+
 ## 한눈에 보는 프로젝트 결과
 
 | 영역 | 해결한 문제 | 선택한 방법 | 확인한 결과 |
@@ -219,7 +236,92 @@ Cache Miss는 첫 요청 뒤 Hit로 바뀌므로 1 VU·1 iteration의 cold reque
 
 이는 로컬 Docker 장애 주입 결과이며 운영 무중단·데이터 무손실·SLA를 의미하지 않는다.
 
-## 6. 테스트와 증거의 범위
+## 6. 성능 테스트와 개선 결과
+
+성능 결과는 로컬 단일 장비의 제한된 Fixture와 부하 조건에서 측정했다. 각 결과는 적용 기술의 상대적 차이를 확인하는 근거이며 운영 TPS·SLA를 의미하지 않는다.
+
+### 6.1 인기 메뉴 인덱스 비교
+
+#### 측정 조건
+
+- MySQL 8.4 전용 벤치마크 스키마
+- 주문 500,000건, 메뉴 20개, ACTIVE 메뉴 15개
+- 최근 7일 주문 약 10%, 이전 주문 약 90%
+- 후보마다 `ANALYZE TABLE` 실행
+- 워밍업 3회 후 `EXPLAIN ANALYZE` 5회 측정
+- 최상단 Limit 노드의 actual end time 중앙값 사용
+
+#### 측정 결과
+
+| 조건 | 측정 5회 중앙값 | Covering Index | 판단 |
+|---|---:|---|---|
+| 기준선 `(menu_id)` | 179.0ms | 아니오 | 기존 기준 |
+| `(ordered_at, menu_id)` | 184.0ms | 아니오 | 실제 JOIN 경로와 맞지 않아 기존 인덱스 사용 |
+| `(menu_id, status, ordered_at)` | 71.5ms | 예 | 후보 |
+| `(menu_id, ordered_at)` | 202.0ms | 아니오 | Covering이 아니며 더 느림 |
+| 최종 `(menu_id, ordered_at, status)` | 66.0ms | 예 | 최종 선택 |
+
+최종 인덱스는 기준선보다 중앙값이 약 **63.1% 낮았다**. 다만 인덱스 저장 공간은 기준선 24,215,552 bytes에서 29,458,432 bytes로 약 **21.7% 증가**했다. 혼합 쓰기 부하와 INSERT·UPDATE 지연은 측정하지 않았으므로 조회 개선만 확인된 결과다.
+
+자세한 실행계획과 후보 비교는 [인기 메뉴 인덱스 벤치마크](docs/benchmarks/issue-12-popular-menu-index.md)를 따른다.
+
+### 6.2 Redis Cache-Aside 기능 검증
+
+정확한 원본은 MySQL `orders`이며 Redis는 계산된 인기 메뉴 응답의 복사본으로만 사용한다.
+
+| 검증 항목 | 확인 결과 |
+|---|---|
+| Cache Key | `popular:menus:7days:{businessDate}:v1` |
+| 업무 날짜 | UTC `Clock`의 현재 시각을 `Asia/Seoul` 날짜로 변환 |
+| TTL | 운영 기본 86,400초, 테스트 프로필 2초 |
+| Cache Hit | Redis 결과를 반환하고 MySQL 집계 Repository를 호출하지 않음 |
+| Cache Miss | MySQL을 1회 조회하고 결과와 TTL을 Redis에 저장 |
+| TTL 만료 | 다음 요청에서 MySQL을 다시 조회하고 캐시를 재생성 |
+| 역직렬화 실패 | 잘못된 캐시를 사용하지 않고 MySQL 결과 반환 |
+| Redis 읽기·쓰기 장애 | 경고 로그를 남기고 MySQL 결과로 fallback |
+| 빈 결과 | `null`과 구분하기 위해 `[]`로 캐싱 |
+
+주문 성공 시마다 캐시를 갱신하거나 Redis ZSet을 원본 랭킹으로 사용하지 않았다. 같은 Key에 동시에 Miss가 발생하는 Cache Stampede와 같은 날짜 안에서 과거 주문이 수정되는 경우의 즉시 무효화는 구현하지 않았다.
+
+자세한 정책과 제한은 [인기 메뉴 Redis 캐시 검증](docs/benchmarks/issue-13-popular-menu-redis-cache.md)을 따른다.
+
+### 6.3 K6 API 성능 비교
+
+#### 시나리오 통제
+
+| 시나리오 | 캐시 설정과 사전 조건 | 부하 조건 | 반복 |
+|---|---|---|---:|
+| MySQL 직접 조회 | `POPULAR_MENU_CACHE_ENABLED=false`, 애플리케이션이 Redis를 호출하지 않음 | 30 VU, 워밍업 10초 + 측정 30초 | 3회 |
+| Cache Hit | 캐시 활성화 후 매 회 Key를 미리 생성 | 30 VU, 워밍업 10초 + 측정 30초 | 3회 |
+| Cache Miss | 매 회 대상 KST 날짜 Key 삭제 | 1 VU, 1 iteration | 3회 |
+
+#### MySQL 직접 조회와 Cache Hit 회차별 결과
+
+| 시나리오 | 회차 | 평균 응답시간 | p95 응답시간 | RPS | HTTP 실패율 |
+|---|---:|---:|---:|---:|---:|
+| MySQL 직접 조회 | 1 | 11.18ms | 14.85ms | 2,670.0 | 0% |
+| MySQL 직접 조회 | 2 | 10.99ms | 14.36ms | 2,714.3 | 0% |
+| MySQL 직접 조회 | 3 | 11.23ms | 14.23ms | 2,656.1 | 0% |
+| Cache Hit | 1 | 9.32ms | 11.84ms | 3,201.0 | 0% |
+| Cache Hit | 2 | 9.33ms | 11.95ms | 3,193.9 | 0% |
+| Cache Hit | 3 | 9.26ms | 11.64ms | 3,222.4 | 0% |
+
+#### 3회 평균 비교
+
+| 시나리오 | 평균 응답시간 | 평균 p95 | 평균 RPS | HTTP 실패율 |
+|---|---:|---:|---:|---:|
+| MySQL 직접 조회 | 11.13ms | 14.48ms | 2,680.1 | 0% |
+| Redis Cache Hit | 9.30ms | 11.81ms | 3,205.8 | 0% |
+
+Cache Hit는 MySQL 직접 조회 기준선보다 평균 응답시간이 약 **16.4% 감소**, p95가 약 **18.4% 감소**, 측정 구간 RPS가 약 **19.6% 증가**했다.
+
+Cache Miss cold request는 `13.01ms`, `5.16ms`, `9.51ms`였으며 모두 HTTP 200이었다. 첫 요청 이후 Hit로 전환되므로 이 3개 표본으로 p95나 처리량 결론을 내리지 않았다. 각 회차에서 요청 전 Key 삭제와 요청 후 Redis Key 재생성을 확인했다.
+
+Docker K6 실행 중 Spring Boot 프로세스가 유지되지 않아 중단된 시도는 무효 결과로 분리하고 최종 수치에서 제외했다. 최종 비교에는 Human 로컬에서 성공한 K6 결과만 사용했다.
+
+자세한 실행 명령·원본 회차·해석 제한은 [인기 메뉴 K6 비교](docs/benchmarks/issue-45-popular-menu-k6.md)를 따른다.
+
+## 7. 테스트와 증거의 범위
 
 | 검증 | 보장하는 범위 | 보장하지 않는 범위 |
 |---|---|---|
@@ -230,7 +332,7 @@ Cache Miss는 첫 요청 뒤 Hit로 바뀌므로 1 VU·1 iteration의 cold reque
 | Replication 검증 | 실제 복제, 라우팅, stale read·DB 복구 | 자동 DB Failover·Replica 장애 HTTP 계약 |
 | Sentinel 장애 주입 | 승격·재연결·전체 장애 fallback·복구 | 절대적 무중단과 캐시 무손실 |
 
-## 7. AI-assisted 개발과 Human 검증
+## 8. AI-assisted 개발과 Human 검증
 
 AI 사용량이 아니라 **AI가 만든 결과를 사람이 어떻게 검증하고 수정했는지**를 기록했다.
 
@@ -258,7 +360,7 @@ Codex 구현·검증·Draft PR
 
 자세한 기록은 [AI Workflow](docs/05_AI_WORKFLOW.md), [Review Log](docs/10_AI_REVIEW_LOG.md), [Workflow Evolution](docs/13_AI_WORKFLOW_EVOLUTION.md)을 따른다.
 
-## 8. 실행·재현
+## 9. 실행·재현
 
 ### 기본 실행
 
@@ -317,7 +419,7 @@ docker compose --profile redis-ha-test run --rm redis-ha-integration-test
 
 장애 스크립트는 Redis Master를 중지·복구하므로 로컬 개발 환경에서만 실행한다.
 
-## 9. 문서
+## 10. 문서
 
 - [Software Architecture](docs/00_SOFTWARE_ARCHITECTURE.md)
 - [Project Context](docs/01_PROJECT_CONTEXT.md)
@@ -334,7 +436,7 @@ docker compose --profile redis-ha-test run --rm redis-ha-integration-test
 - [인기 메뉴 Redis 캐시 검증](docs/benchmarks/issue-13-popular-menu-redis-cache.md)
 - [인기 메뉴 K6 비교](docs/benchmarks/issue-45-popular-menu-k6.md)
 
-## 10. 알려진 한계와 후속 개선
+## 11. 알려진 한계와 후속 개선
 
 - Outbox Publisher는 단일 애플리케이션 인스턴스를 전제로 하며 멀티 인스턴스 선점 경쟁을 처리하지 않는다.
 - 실제 애플리케이션 프로세스 강제 종료·재시작 후 Outbox 전송 재개 E2E는 검증하지 않았다.
@@ -345,7 +447,7 @@ docker compose --profile redis-ha-test run --rm redis-ha-integration-test
 - Cache Stampede, 과거 주문 수정에 대한 즉시 캐시 무효화, 운영 규모 성능은 미검증이다.
 - 인증·인가, 실제 PG, RabbitMQ·Kafka, MSA·Kubernetes는 과제 핵심 문제와 시간 대비 효율을 고려해 제외했다.
 
-## 11. 트러블슈팅 요약
+## 12. 트러블슈팅 요약
 
 자세한 내용은 [Troubleshooting](docs/09_TROUBLESHOOTING.md) 및 관련 벤치마크 문서를 참고한다.
 
@@ -379,7 +481,7 @@ docker compose --profile redis-ha-test run --rm redis-ha-integration-test
 문제 원인 : 단일 DataSource로 읽기·쓰기가 분리되지 않고 Primary와 Replica 사이의 복제가 비동기로 동작함  
 해결 방법 : `RoutingDataSource`로 readOnly 조회만 Replica에 보내고 쓰기·비관적 락·정합성 판단은 Primary에서 처리함
 
-## 12. AI 리뷰 로그 요약
+## 13. AI 리뷰 로그 요약
 
 자세한 내용은 [AI Review Log](docs/10_AI_REVIEW_LOG.md)를 참고한다.
 
