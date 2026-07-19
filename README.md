@@ -106,7 +106,7 @@ flowchart LR
 |---|---|---|
 | DB 비관적 락 | 보호 대상이 MySQL `point_wallet.balance`이며 여러 App 인스턴스도 같은 Primary의 row lock을 공유하는 구조 | Redis 분산락은 원본 행 변경과 별도 실패 지점을 만들며 현재 문제에 과도함. 실제 다중 App 처리량은 미검증 |
 | MySQL 집계 + Redis Cache-Aside | 정확성은 `orders`, 성능은 Redis로 책임 분리 | Redis ZSet은 DB·Redis 이중 쓰기, 기간 만료, 보정·재구축 책임이 추가됨 |
-| `(menu_id, ordered_at, status)` | 실제 LEFT JOIN의 `menu_id` 경로와 covering 조건에 맞고 격리 측정 결과가 가장 낮음 | 상태 분포가 바뀌면 `(menu_id, status, ordered_at)`과 재측정 필요 |
+| 인덱스 `(menu_id, ordered_at, status)` | 실제 LEFT JOIN의 `menu_id` 경로와 covering 조건에 맞고 격리 측정 결과가 가장 낮음 | 상태 분포가 바뀌면 `(menu_id, status, ordered_at)`과 재측정 필요 |
 | Transactional Outbox | 주문과 이벤트를 한 DB 트랜잭션으로 저장하고 Commit된 `PENDING` 이벤트를 Publisher가 다시 조회할 수 있게 함 | 외부 전송 성공 후 `SENT` 반영 전 장애 시 중복 가능. Exactly Once 미보장 |
 | Spring RoutingDataSource | 트랜잭션의 readOnly 속성과 JPA 경로를 유지하며 읽기·쓰기를 분리 | ProxySQL·HAProxy·자동 DB Failover는 과제 범위를 넘으므로 제외 |
 | Redis Sentinel | 단순 Master-Replica에 없는 자동 장애 판단·승격·Master 탐색 제공 | 무중단이나 데이터 무손실을 절대 보장하지 않음 |
